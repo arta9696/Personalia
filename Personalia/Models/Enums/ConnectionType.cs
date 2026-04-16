@@ -12,8 +12,8 @@ public sealed class ConnectionType : SmartEnum<ConnectionType>
 {
     // ── Registered instances ──────────────────────────────────────────────────
 
-    public static readonly ConnectionType CloseFamily = new(0, nameof(CloseFamily), "Близкородственные");
-    public static readonly ConnectionType Family = new(1, nameof(Family), "Родственные");
+    public static readonly ConnectionType CloseFamily = new(0, nameof(CloseFamily), "Близкородственные");   //Blood family
+    public static readonly ConnectionType Family = new(1, nameof(Family), "Родственные");                   //Legal family
     public static readonly ConnectionType Acquaintance = new(2, nameof(Acquaintance), "Знакомые");
     public static readonly ConnectionType Friend = new(3, nameof(Friend), "Друзья");
     public static readonly ConnectionType Colleague = new(4, nameof(Colleague), "Коллеги");

@@ -10,23 +10,36 @@ using Personalia.Models.Enums;
 namespace Personalia.CharGen.Services;
 
 /// <summary>
-/// Generates randomised <see cref="GeneratedCharacter"/> instances by
-/// populating the Personalia domain model with plausible random data.
+/// Generates <see cref="Character"/> instances and maintains a per-instance
+/// queue of partially-initialised characters so that every person referenced
+/// as a social connection eventually receives a full profile.
 ///
-/// All social relations (family, acquaintances, partners) are represented as
-/// first-class <see cref="Character"/> objects and linked through
-/// <see cref="Character.LifeConnections"/>, using the appropriate
-/// <see cref="ConnectionType"/> and an optional <see cref="Connection.Label"/>
-/// for fine-grained role context (e.g. "mother", "romantic partner").
+/// Queue discipline
+/// ────────────────
+/// • When the queue is empty a brand-new <see cref="Character"/> is built from
+///   scratch (identity, age, physique, clothing, connections, occupation).
+/// • After completing any character — new or queued — all alive, not-yet-
+///   processed characters found in its outbound connections are appended to the
+///   queue, sorted oldest-to-youngest: family connections first, then non-family.
+/// • Deceased minimal characters are never enqueued.
+/// • Every <see cref="CharacterRandomizer"/> instance owns its own queue and
+///   processed-ID set, so multiple generators run independently.
 ///
-/// Clothing is built as fully formed <see cref="ClothingItem"/> objects —
-/// with slots and components assigned — before being worn by the character.
-/// Plain string names from the data pools are used only because no enum
-/// covering clothing-item names exists in the domain model.
+/// Queued-character completion
+/// ───────────────────────────
+/// A minimal character already carries: <see cref="BiologicalGender"/>,
+/// <see cref="Appearance.FirstName"/>, <see cref="Appearance.LastName"/>,
+/// <see cref="Appearance.Age"/>, and at least one reverse
+/// <see cref="Connection"/>. Completion preserves all of these and only fills
+/// in missing data (orientation, physique, birthday, features, clothing,
+/// additional connections, occupation). <see cref="GenerateFamily"/> inspects
+/// existing outbound family connections before adding new roles, preventing
+/// contradictions such as a second mother or a duplicate parent that was
+/// already wired as a reverse connection.
 /// </summary>
 public sealed class CharacterRandomizer
 {
-    // ── Distribution constants ─────────────────────────────────────────────────
+    // ── Distribution constants ────────────────────────────────────────────────
 
     private const double MeanAge = 35.0;
     private const double StdDevAge = 15.0;
@@ -38,7 +51,7 @@ public sealed class CharacterRandomizer
     private const double FemaleMeanHeightCm = 163.0;
     private const double HeightStdDevCm = 8.0;
 
-    // ── Family role age-delta table ────────────────────────────────────────────
+    // ── Family role age-delta table ───────────────────────────────────────────
 
     private static readonly IReadOnlyDictionary<string, (int Min, int Max)> FamilyRoleDeltas =
         new Dictionary<string, (int, int)>
@@ -51,11 +64,27 @@ public sealed class CharacterRandomizer
             ["daughter"] = (-35, -20)
         };
 
+    // ── Instance state ────────────────────────────────────────────────────────
+
     private readonly Random _rng;
+
+    /// <summary>
+    /// Characters that have been created as minimal references and are
+    /// waiting to be fully completed on a future <see cref="Generate"/> call.
+    /// Sorted oldest-to-youngest (family first, then non-family) at the time
+    /// each batch is appended.
+    /// </summary>
+    private readonly Queue<Character> _queue = new();
+
+    /// <summary>
+    /// Tracks every character ID that has already been enqueued or fully
+    /// generated, preventing the same person from being enqueued twice.
+    /// </summary>
+    private readonly HashSet<Guid> _processed = new();
 
     // ── Construction ──────────────────────────────────────────────────────────
 
-    /// <param name="seed">Optional seed for reproducible output.</param>
+    /// <param name="seed">Optional RNG seed for reproducible output.</param>
     public CharacterRandomizer(int? seed = null)
     {
         _rng = seed.HasValue ? new Random(seed.Value) : new Random();
@@ -64,17 +93,63 @@ public sealed class CharacterRandomizer
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Generates and returns a fully populated <see cref="Character"/>.
-    /// Social connections are stored inside <see cref="Character.LifeConnections"/>.
+    /// Returns the next fully populated <see cref="Character"/>.
+    ///
+    /// If the internal queue is non-empty the front character (a previously
+    /// created minimal character) is dequeued and completed without overwriting
+    /// already-set fields. Otherwise a brand-new character is created from
+    /// scratch. In both cases all alive, not-yet-processed connections produced
+    /// during completion are sorted and appended to the queue.
     /// </summary>
     public Character Generate()
     {
-        var character = new Character();
-        bool isMale = _rng.Next(2) == 0;
-        string gender = isMale ? "Male" : "Female";   // matches BiologicalGender.Name
+        bool isFromQueue = _queue.Count > 0;
+        Character character = isFromQueue ? _queue.Dequeue() : new Character();
 
-        SetIdentity(character, isMale);
-        SetAge(character);
+        // Mark as processed before completing so that reverse connections
+        // pointing back to already-processed characters are never re-enqueued.
+        _processed.Add(character.Id);
+
+        CompleteCharacter(character, isFromQueue);
+        EnqueueMinimalCharacters(character);
+
+        return character;
+    }
+
+    /// <summary>Number of characters currently waiting in the queue.</summary>
+    public int QueueCount => _queue.Count;
+
+    // ── Character completion ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fully populates <paramref name="character"/>.
+    ///
+    /// When <paramref name="isFromQueue"/> is <c>true</c> the character already
+    /// has gender, name, age, and at least one connection set; those fields are
+    /// preserved. Only the missing pieces (orientation, physique, birthday,
+    /// features, clothing, additional connections, occupation) are filled in.
+    /// </summary>
+    private void CompleteCharacter(Character character, bool isFromQueue)
+    {
+        bool isMale;
+
+        if (isFromQueue)
+        {
+            // Minimal character: gender / name / age already set — derive isMale
+            // and assign only the missing orientation.
+            isMale = character.Appearance.BiologicalGender.Value == BiologicalGender.Male;
+            SetOrientation(character);
+        }
+        else
+        {
+            // Brand-new character: assign full identity and age first.
+            isMale = _rng.Next(2) == 0;
+            SetIdentity(character, isMale);
+            SetAge(character);
+        }
+
+        string gender = isMale ? "Male" : "Female";
+
         SetPhysique(character, isMale);
         SetBirthday(character);
         SetDistinctiveFeatures(character);
@@ -82,28 +157,75 @@ public sealed class CharacterRandomizer
         GenerateFamily(character);
         GenerateAcquaintances(character);
         GeneratePartners(character);
-
         character.Occupation = GenerateWork(character.Appearance.Age.Value);
+    }
 
-        return character;
+    // ── Queue management ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Collects all alive, not-yet-processed characters from
+    /// <paramref name="character"/>'s outbound connections, sorts them
+    /// (older-to-youngest family first, then older-to-youngest non-family),
+    /// and appends each to the queue exactly once.
+    /// </summary>
+    private void EnqueueMinimalCharacters(Character character)
+    {
+        var outbound = character.LifeConnections
+            .From(character.Id)
+            .ToList();
+
+        IEnumerable<Character> familyCandidates = outbound
+            .Where(c => c.Type.IsFamily)
+            .Select(c => c.ToCharacterNode.Character)
+            .Where(c => c.IsAlive)
+            .OrderByDescending(c => c.Appearance.Age.Value);
+
+        IEnumerable<Character> nonFamilyCandidates = outbound
+            .Where(c => !c.Type.IsFamily)
+            .Select(c => c.ToCharacterNode.Character)
+            .Where(c => c.IsAlive)
+            .OrderByDescending(c => c.Appearance.Age.Value);
+
+        foreach (Character candidate in familyCandidates.Concat(nonFamilyCandidates))
+        {
+            // _processed.Add returns false if the ID is already present,
+            // so each character is enqueued at most once across all passes.
+            if (_processed.Add(candidate.Id))
+                _queue.Enqueue(candidate);
+        }
     }
 
     // ── Identity ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Sets all identity fields (gender, orientation, first name, last name)
+    /// for a brand-new character. Not called for queued characters, whose
+    /// identity fields were set by <see cref="CreateMinimalCharacter"/>.
+    /// </summary>
     private void SetIdentity(Character character, bool isMale)
     {
         character.Appearance.BiologicalGender =
             new HiddenValue<BiologicalGender>(
                 isMale ? BiologicalGender.Male : BiologicalGender.Female);
 
-        // Sexual orientation is hidden by default (matches Appearance defaults).
-        var orientations = SexualOrientation.All.ToList();
-        character.Appearance.SexualOrientation =
-            HiddenValue<SexualOrientation>.Hidden(orientations[_rng.Next(orientations.Count)]);
+        SetOrientation(character);
 
         var firstPool = isMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
         character.Appearance.FirstName = new HiddenValue<string>(Pick(firstPool));
         character.Appearance.LastName = new HiddenValue<string>(Pick(NamePool.LastNames));
+    }
+
+    /// <summary>
+    /// Assigns a random hidden <see cref="SexualOrientation"/>.
+    /// Called for both brand-new characters (via <see cref="SetIdentity"/>) and
+    /// queued characters (directly from <see cref="CompleteCharacter"/>), because
+    /// <see cref="CreateMinimalCharacter"/> does not set orientation.
+    /// </summary>
+    private void SetOrientation(Character character)
+    {
+        var orientations = SexualOrientation.All.ToList();
+        character.Appearance.SexualOrientation =
+            HiddenValue<SexualOrientation>.Hidden(orientations[_rng.Next(orientations.Count)]);
     }
 
     // ── Age ───────────────────────────────────────────────────────────────────
@@ -192,7 +314,7 @@ public sealed class CharacterRandomizer
     /// <summary>
     /// Selects clothing items from the data pools by name, constructs each as
     /// a fully formed <see cref="ClothingItem"/> (slots + components), and
-    /// equips it on the character.  Plain string names are used because the
+    /// equips it on the character. Plain string names are used because the
     /// domain model contains no enum for clothing-item names.
     /// </summary>
     private void AddClothing(Character character, string gender)
@@ -239,21 +361,42 @@ public sealed class CharacterRandomizer
     // ── Social connections ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Generates family members as proper <see cref="Character"/> objects and
-    /// links them to <paramref name="character"/> via <see cref="LifeConnections"/>.
-    /// <para>
-    /// ConnectionType: <see cref="ConnectionType.CloseFamily"/> for parents;
-    ///                 <see cref="ConnectionType.Family"/> for siblings / children.
-    /// Connection.Label carries the specific role ("mother", "father", etc.).
-    /// </para>
+    /// Generates family members and links them to <paramref name="character"/>.
+    ///
+    /// Before adding any role the method builds a <c>filledRoles</c> set from
+    /// the character's existing outbound family connections. This prevents:
+    /// <list type="bullet">
+    ///   <item>Duplicate roles — e.g., a second mother.</item>
+    ///   <item>Contradictory roles — e.g., a new father added when the character
+    ///         was already created as someone else's son and carries a reverse
+    ///         "father" connection back to that character.</item>
+    /// </list>
+    /// Sibling and child roles (brother / sister / son / daughter) are not
+    /// treated as unique singletons, so multiples remain possible.
     /// </summary>
     private void GenerateFamily(Character character)
     {
         int age = character.Appearance.Age.Value;
-        string gender = character.Appearance.BiologicalGender.Value.Name; // "Male" | "Female"
+        string gender = character.Appearance.BiologicalGender.Value.Name;
         string lastName = character.Appearance.LastName.Value;
 
-        var roles = new List<string> { "mother", "father" };
+        // Collect family roles that are already wired up as outbound connections
+        // (this includes reverse-role connections added when the character was
+        // first created as someone else's relative).
+        var filledRoles = new HashSet<string>(
+            character.LifeConnections.All
+                .Where(c => c.FromCharacterNode.Character.Id == character.Id
+                            && c.Type.IsFamily
+                            && c.Label is not null)
+                .Select(c => c.Label!),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Mandatory singleton roles — add only when not already filled.
+        var roles = new List<string>();
+        if (!filledRoles.Contains("mother")) roles.Add("mother");
+        if (!filledRoles.Contains("father")) roles.Add("father");
+
+        // Optional repeatable extras (siblings and children).
         var extras = new List<string> { "brother", "sister" };
         if (age >= 20) extras.AddRange(["son", "daughter"]);
 
@@ -294,27 +437,28 @@ public sealed class CharacterRandomizer
                 Strength = 0.8f
             });
 
-            var reverceRole = role switch
+            string reverseRole = role switch
             {
                 "father" or "mother" => gender == "Male" ? "son" : "daughter",
                 "son" or "daughter" => gender == "Male" ? "father" : "mother",
                 "brother" or "sister" => gender == "Male" ? "brother" : "sister",
-                _ => ""
+                _ => string.Empty
             };
+
             relative.LifeConnections.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = relative },
                 ToCharacterNode = new ConnectionNode { Character = character },
                 Type = ConnectionType.CloseFamily,
-                Label = reverceRole,
+                Label = reverseRole,
                 Strength = 0.8f
             });
         }
     }
 
     /// <summary>
-    /// Generates acquaintances as <see cref="Character"/> objects and links them
-    /// via <see cref="ConnectionType.Acquaintance"/>.
+    /// Generates acquaintances as minimal <see cref="Character"/> objects and
+    /// links them via <see cref="ConnectionType.Acquaintance"/>.
     /// </summary>
     private void GenerateAcquaintances(Character character)
     {
@@ -352,24 +496,24 @@ public sealed class CharacterRandomizer
     }
 
     /// <summary>
-    /// Generates partners as <see cref="Character"/> objects and links them via
-    /// <see cref="ConnectionType.Romantic"/> (romantic) or
+    /// Generates partners as minimal <see cref="Character"/> objects and links
+    /// them via <see cref="ConnectionType.Romantic"/> (romantic) or
     /// <see cref="ConnectionType.Friend"/> (platonic), with a
     /// <see cref="Connection.Label"/> of "romantic partner" or "platonic partner".
+    /// Only applies from <see cref="AgeCategory.YoungAdult"/> upward.
     /// </summary>
     private void GeneratePartners(Character character)
     {
-        int    age         = character.Appearance.Age.Value;
-        string gender      = character.Appearance.BiologicalGender.Value.Name;
-        var    orientation = character.Appearance.SexualOrientation.Value;
- 
-        // Partners only apply from YoungAdult upward.
+        int age = character.Appearance.Age.Value;
+        string gender = character.Appearance.BiologicalGender.Value.Name;
+        var orientation = character.Appearance.SexualOrientation.Value;
+
         if (AgeCategory.FromAge(age).IsMinor) return;
         if (orientation == SexualOrientation.Asexual && _rng.NextDouble() >= 0.1) return;
- 
+
         int maxCount = age < 30 ? 1 : 2;
-        int count    = _rng.Next(0, maxCount + 1);
- 
+        int count = _rng.Next(0, maxCount + 1);
+
         for (int i = 0; i < count; i++)
         {
             string partnerGender = orientation switch
@@ -380,33 +524,33 @@ public sealed class CharacterRandomizer
                     => gender,
                 _ => _rng.Next(2) == 0 ? "Male" : "Female"
             };
- 
-            bool   partnerIsMale = partnerGender == "Male";
-            var    namePool      = partnerIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
-            bool   isRomantic    = _rng.NextDouble() < 0.7;
-            string label         = isRomantic ? "romantic partner" : "platonic partner";
- 
+
+            bool partnerIsMale = partnerGender == "Male";
+            var namePool = partnerIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
+            bool isRomantic = _rng.NextDouble() < 0.7;
+            string label = isRomantic ? "romantic partner" : "platonic partner";
+
             var partner = CreateMinimalCharacter(
                 partnerIsMale ? BiologicalGender.Male : BiologicalGender.Female,
-                first:   Pick(namePool),
-                last:    Pick(NamePool.LastNames),
-                age:     Math.Max(18, age + _rng.Next(-5, 6)),
+                first: Pick(namePool),
+                last: Pick(NamePool.LastNames),
+                age: Math.Max(18, age + _rng.Next(-5, 6)),
                 isAlive: true);
- 
+
             character.LifeConnections.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = character },
-                ToCharacterNode   = new ConnectionNode { Character = partner },
-                Type     = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
-                Label    = label,
+                ToCharacterNode = new ConnectionNode { Character = partner },
+                Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
+                Label = label,
                 Strength = 0.9f
             });
             partner.LifeConnections.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = partner },
-                ToCharacterNode   = new ConnectionNode { Character = character },
-                Type     = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
-                Label    = label,
+                ToCharacterNode = new ConnectionNode { Character = character },
+                Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
+                Label = label,
                 Strength = 0.9f
             });
         }
@@ -435,15 +579,20 @@ public sealed class CharacterRandomizer
                 ? Pick(WorkPool.ByAgeGroup[AgeCategory.Senior.Name])
                 : "retired";
 
-        // YoungAdult, Adult, MiddleAged — always employed
+        // YoungAdult, Adult, MiddleAged — always employed.
         return Pick(WorkPool.ByAgeGroup[category.Name]);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Minimal character factory ─────────────────────────────────────────────
 
     /// <summary>
-    /// Creates a <see cref="Character"/> populated with just the minimum fields
-    /// needed to represent a related person (name, age, gender, alive status).
+    /// Creates a <see cref="Character"/> populated with the minimum fields
+    /// needed to represent a social connection: gender, name, age, alive-status.
+    ///
+    /// Orientation, physique, birthday, features, clothing, additional
+    /// connections, and occupation are intentionally left at their defaults;
+    /// they will be filled in by <see cref="CompleteCharacter"/> if and when
+    /// this character is dequeued.
     /// </summary>
     private static Character CreateMinimalCharacter(
         BiologicalGender gender,
@@ -457,6 +606,8 @@ public sealed class CharacterRandomizer
         c.Appearance.Age = new HiddenValue<int>(age);
         return c;
     }
+
+    // ── RNG helpers ───────────────────────────────────────────────────────────
 
     private T Pick<T>(IReadOnlyList<T> list) => list[_rng.Next(list.Count)];
 
