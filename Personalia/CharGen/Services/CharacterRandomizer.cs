@@ -30,30 +30,61 @@ namespace Personalia.CharGen.Services;
 /// A minimal character already carries: <see cref="BiologicalGender"/>,
 /// <see cref="Appearance.FirstName"/>, <see cref="Appearance.LastName"/>,
 /// <see cref="Appearance.Age"/>, and at least one reverse
-/// <see cref="Connection"/>. Completion preserves all of these and only fills
-/// in missing data (orientation, physique, birthday, features, clothing,
-/// additional connections, occupation). <see cref="GenerateFamily"/> inspects
-/// existing outbound family connections before adding new roles, preventing
-/// contradictions such as a second mother or a duplicate parent that was
-/// already wired as a reverse connection.
+/// <see cref="Connection"/>. Completion for queued characters:
+///
+/// 1. Co-parents are wired as romantic partners (<see cref="LinkCoParentsAsPartners"/>).
+/// 2. Orientation is derived from existing partner connections rather than
+///    chosen at random (<see cref="SetOrientationFromPartners"/>):
+///    • All opposite-gender partners → Heterosexual.
+///    • All same-gender partners → Homosexual.
+///    • Mixed → weighted heavily toward Bisexual, leaning by majority gender.
+///    • No partners → weighted toward Asexual proportionally to age.
+/// 3. If the character was created as a parent (has existing son/daughter
+///    connections), no additional child connections are generated — those
+///    siblings were already wired when the originating child was processed.
 /// </summary>
 public sealed class CharacterRandomizer
 {
-    // ── Distribution constants ────────────────────────────────────────────────
+    // ── Age distribution ──────────────────────────────────────────────────────
 
     private const double MeanAge = 35.0;
     private const double StdDevAge = 15.0;
     private const int MinAge = 1;
     private const int MaxAge = 100;
 
-    // Male mean ~175 cm, female ~163 cm; shared standard deviation.
+    // ── Height distribution ───────────────────────────────────────────────────
+
     private const double MaleMeanHeightCm = 175.0;
     private const double FemaleMeanHeightCm = 163.0;
     private const double HeightStdDevCm = 8.0;
+    private const double MinHeightCm = 130.0;
+    private const double MaxHeightCm = 220.0;
 
-    // ── Family role age-delta table ───────────────────────────────────────────
+    // ── Family generation ─────────────────────────────────────────────────────
 
-    private static readonly IReadOnlyDictionary<string, (int Min, int Max)> FamilyRoleDeltas =
+    /// <summary>Minimum age for a character to have child connections generated.</summary>
+    private const int MinAgeForChildren = 20;
+
+    /// <summary>Probability of adding one more optional family member per iteration.</summary>
+    private const double AdditionalFamilyChance = 0.30;
+
+    /// <summary>Base probability that a generated relative is alive.</summary>
+    private const double RelativeAliveBaseChance = 0.90;
+
+    /// <summary>
+    /// Probability that an elderly parent is still alive when the character
+    /// is older than <see cref="ElderlyParentAgeThreshold"/>.
+    /// </summary>
+    private const double ElderlyParentAliveChance = 0.30;
+
+    /// <summary>Character age above which parent survival is further reduced.</summary>
+    private const int ElderlyParentAgeThreshold = 70;
+
+    /// <summary>Parent probability of having parallel children and thus family.</summary>
+    private const double ParallelChildrenChance = 0.05;
+
+    /// <summary>Age-delta table for family roles: (minDelta, maxDelta) relative to character age.</summary>
+    private static readonly IReadOnlyDictionary<string, (int Min, int Max)> FamilyRoleAgeDeltas =
         new Dictionary<string, (int, int)>
         {
             ["mother"] = (20, 35),
@@ -63,6 +94,88 @@ public sealed class CharacterRandomizer
             ["son"] = (-35, -20),
             ["daughter"] = (-35, -20)
         };
+
+    private static readonly IReadOnlyList<string> SiblingRoles = ["brother", "sister"];
+    private static readonly IReadOnlyList<string> ChildRoles = ["son", "daughter"];
+
+    // ── Acquaintances ─────────────────────────────────────────────────────────
+
+    /// <summary>Upper exclusive bound for random acquaintance count (0 to max-1).</summary>
+    private const int MaxAcquaintanceCount = 6;
+
+    private const int AcquaintanceAgeDeltaMin = -5;
+    private const int AcquaintanceAgeDeltaMax = 5;
+
+    // ── Partners ──────────────────────────────────────────────────────────────
+
+    /// <summary>Minimum age for any partner generated from scratch.</summary>
+    private const int MinPartnerAge = 18;
+
+    /// <summary>Age below which a character may have at most one partner.</summary>
+    private const int PartnerCountYoungAgeThreshold = 30;
+
+    private const int MaxPartnersYoungAge = 1;
+    private const int MaxPartnersAdultAge = 2;
+
+    private const int PartnerAgeDeltaMin = -5;
+    private const int PartnerAgeDeltaMax = 5;
+
+    /// <summary>Probability that a newly generated partner is romantic (vs platonic).</summary>
+    private const double RomanticPartnerChance = 0.70;
+
+    /// <summary>
+    /// Probability that an asexual character still gets a partner generated.
+    /// </summary>
+    private const double AsexualPartnerChance = 0.10;
+
+    // ── Clothing ──────────────────────────────────────────────────────────────
+
+    /// <summary>Probability that a character has an accessory item.</summary>
+    private const double AccessoryChance = 0.30;
+
+    // ── Work ──────────────────────────────────────────────────────────────────
+
+    /// <summary>Probability that a Teen character is employed.</summary>
+    private const double TeenWorkChance = 0.30;
+
+    /// <summary>Probability that a Senior character is still working (vs retired).</summary>
+    private const double SeniorWorkChance = 0.60;
+
+    // ── Distinctive features ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Exclusive upper bound for the number of distinctive features per character.
+    /// <c>_rng.Next(N)</c> yields 0 … N-1, so this gives 0, 1, or 2 features.
+    /// </summary>
+    private const int DistinctiveFeatureMaxCount = 3;
+
+    // ── Connection strength ───────────────────────────────────────────────────
+
+    private const float ConnectionStrengthFamily = 0.8f;
+    private const float ConnectionStrengthAcquaintance = 0.3f;
+    private const float ConnectionStrengthPartner = 0.9f;
+
+    // ── Orientation derivation — no partners ──────────────────────────────────
+
+    /// <summary>Asexual weight at age 0 when a character has no partners.</summary>
+    private const double OrientationNoPartnerAsexualBaseWeight = 0.05;
+
+    /// <summary>
+    /// Additional asexual weight added at <see cref="MaxAge"/> when a character
+    /// has no partners.  Final weight = Base + AgeWeight * (age / MaxAge).
+    /// </summary>
+    private const double OrientationNoPartnerAsexualAgeWeight = 0.45;
+
+    // ── Orientation derivation — mixed partners ───────────────────────────────
+
+    /// <summary>Base probability of Bisexual when a character has both-gender partners.</summary>
+    private const double OrientationMixedBiBaseWeight = 0.60;
+
+    /// <summary>
+    /// Additional weight budget distributed proportionally to partner-gender fractions
+    /// to produce a Hetero/Homo lean when partners are mixed.
+    /// </summary>
+    private const double OrientationMixedGenderLeanWeight = 0.40;
 
     // ── Instance state ────────────────────────────────────────────────────────
 
@@ -125,9 +238,13 @@ public sealed class CharacterRandomizer
     /// Fully populates <paramref name="character"/>.
     ///
     /// When <paramref name="isFromQueue"/> is <c>true</c> the character already
-    /// has gender, name, age, and at least one connection set; those fields are
-    /// preserved. Only the missing pieces (orientation, physique, birthday,
-    /// features, clothing, additional connections, occupation) are filled in.
+    /// has gender, name, age, and at least one connection set. The method:
+    /// <list type="number">
+    ///   <item>Links co-parents as romantic partners.</item>
+    ///   <item>Derives orientation from existing partners.</item>
+    ///   <item>Skips generating new children if the character already has them.</item>
+    /// </list>
+    /// Brand-new characters receive a randomly chosen orientation instead.
     /// </summary>
     private void CompleteCharacter(Character character, bool isFromQueue)
     {
@@ -135,10 +252,11 @@ public sealed class CharacterRandomizer
 
         if (isFromQueue)
         {
-            // Minimal character: gender / name / age already set — derive isMale
-            // and assign only the missing orientation.
+            // Gender, name, and age were set by CreateMinimalCharacter.
+            // Wire co-parents first so orientation derivation sees those partners.
             isMale = character.Appearance.BiologicalGender.Value == BiologicalGender.Male;
-            SetOrientation(character);
+            LinkCoParentsAsPartners(character);
+            SetOrientationFromPartners(character);
         }
         else
         {
@@ -170,9 +288,7 @@ public sealed class CharacterRandomizer
     /// </summary>
     private void EnqueueMinimalCharacters(Character character)
     {
-        var outbound = character.LifeConnections
-            .From(character.Id)
-            .ToList();
+        var outbound = character.LifeConnections.From(character.Id).All;
 
         IEnumerable<Character> familyCandidates = outbound
             .Where(c => c.Type.IsFamily)
@@ -208,7 +324,7 @@ public sealed class CharacterRandomizer
             new HiddenValue<BiologicalGender>(
                 isMale ? BiologicalGender.Male : BiologicalGender.Female);
 
-        SetOrientation(character);
+        SetOrientationRandom(character);
 
         var firstPool = isMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
         character.Appearance.FirstName = new HiddenValue<string>(Pick(firstPool));
@@ -216,16 +332,104 @@ public sealed class CharacterRandomizer
     }
 
     /// <summary>
-    /// Assigns a random hidden <see cref="SexualOrientation"/>.
-    /// Called for both brand-new characters (via <see cref="SetIdentity"/>) and
-    /// queued characters (directly from <see cref="CompleteCharacter"/>), because
-    /// <see cref="CreateMinimalCharacter"/> does not set orientation.
+    /// Assigns a random <see cref="SexualOrientation"/> (hidden from observers).
+    /// Used for brand-new characters who have no social connections yet.
     /// </summary>
-    private void SetOrientation(Character character)
+    private void SetOrientationRandom(Character character)
     {
         var orientations = SexualOrientation.All.ToList();
         character.Appearance.SexualOrientation =
             HiddenValue<SexualOrientation>.Hidden(orientations[_rng.Next(orientations.Count)]);
+    }
+
+    /// <summary>
+    /// Derives and assigns <see cref="SexualOrientation"/> from the character's
+    /// existing partner connections (hidden from observers).
+    ///
+    /// Rules:
+    /// <list type="bullet">
+    ///   <item>All opposite-gender partners → <see cref="SexualOrientation.Heterosexual"/>.</item>
+    ///   <item>All same-gender partners → <see cref="SexualOrientation.Homosexual"/>.</item>
+    ///   <item>Mixed partners → weighted toward <see cref="SexualOrientation.Bisexual"/>,
+    ///         with a lean toward Hetero/Homo proportional to which gender dominates.</item>
+    ///   <item>No partners → weighted toward <see cref="SexualOrientation.Asexual"/>,
+    ///         with weight rising linearly from
+    ///         <see cref="OrientationNoPartnerAsexualBaseWeight"/> at age 0 to
+    ///         Base + <see cref="OrientationNoPartnerAsexualAgeWeight"/> at max age.</item>
+    /// </list>
+    /// </summary>
+    private void SetOrientationFromPartners(Character character)
+    {
+        var partnerConns = character.LifeConnections.All
+            .Where(c => c.FromCharacterNode.Character.Id == character.Id
+                        && c.Label is not null
+                        && c.Label.EndsWith("partner"))
+            .ToList();
+
+        SexualOrientation orientation;
+
+        if (partnerConns.Count == 0)
+        {
+            orientation = DeriveOrientationNoPartners(character.Appearance.Age.Value);
+        }
+        else
+        {
+            string ownGender = character.Appearance.BiologicalGender.Value.Name;
+            int sameCount = partnerConns.Count(c =>
+                c.ToCharacterNode.Character.Appearance.BiologicalGender.Value.Name == ownGender);
+            int oppositeCount = partnerConns.Count - sameCount;
+
+            orientation = (sameCount, oppositeCount) switch
+            {
+                (0, _) => SexualOrientation.Heterosexual,
+                (_, 0) => SexualOrientation.Homosexual,
+                _ => DeriveOrientationMixedPartners(sameCount, oppositeCount)
+            };
+        }
+
+        character.Appearance.SexualOrientation =
+            HiddenValue<SexualOrientation>.Hidden(orientation);
+    }
+
+    /// <summary>
+    /// Returns a random orientation weighted toward Asexual proportionally to age
+    /// when a character has no partner history.
+    /// </summary>
+    private SexualOrientation DeriveOrientationNoPartners(int age)
+    {
+        double asexualWeight = OrientationNoPartnerAsexualBaseWeight
+            + OrientationNoPartnerAsexualAgeWeight * ((double)age / MaxAge);
+
+        double roll = _rng.NextDouble();
+
+        if (roll < asexualWeight)
+            return SexualOrientation.Asexual;
+
+        // Remaining probability split equally among the other three orientations.
+        double each = (1.0 - asexualWeight) / 3.0;
+        double pos = roll - asexualWeight;
+        if (pos < each) return SexualOrientation.Heterosexual;
+        if (pos < each * 2.0) return SexualOrientation.Homosexual;
+        return SexualOrientation.Bisexual;
+    }
+
+    /// <summary>
+    /// Returns a random orientation for a character with mixed-gender partners.
+    /// Bisexual receives a base weight; Hetero/Homo receive additional weight
+    /// proportional to which partner gender dominates.
+    /// </summary>
+    private SexualOrientation DeriveOrientationMixedPartners(int sameCount, int oppositeCount)
+    {
+        double total = sameCount + oppositeCount;
+        double biWeight = OrientationMixedBiBaseWeight;
+        double heteroWeight = (oppositeCount / total) * OrientationMixedGenderLeanWeight;
+        double homoWeight = (sameCount / total) * OrientationMixedGenderLeanWeight;
+        double weightSum = biWeight + heteroWeight + homoWeight;
+
+        double roll = _rng.NextDouble() * weightSum;
+        if (roll < biWeight) return SexualOrientation.Bisexual;
+        if (roll < biWeight + heteroWeight) return SexualOrientation.Heterosexual;
+        return SexualOrientation.Homosexual;
     }
 
     // ── Age ───────────────────────────────────────────────────────────────────
@@ -247,7 +451,7 @@ public sealed class CharacterRandomizer
         // Height — gender-biased Gaussian
         double meanH = isMale ? MaleMeanHeightCm : FemaleMeanHeightCm;
         p.Torso.Organs.Skeleton.HeightCm =
-            (float)Math.Clamp(NextGaussian(meanH, HeightStdDevCm), 130.0, 220.0);
+            (float)Math.Clamp(NextGaussian(meanH, HeightStdDevCm), MinHeightCm, MaxHeightCm);
 
         p.Torso.Organs.Muscles.Volume = (float)_rng.NextDouble();
         p.Torso.Organs.FattyTissue.Volume = (float)_rng.NextDouble();
@@ -298,7 +502,7 @@ public sealed class CharacterRandomizer
 
     private void SetDistinctiveFeatures(Character character)
     {
-        int count = _rng.Next(3);   // 0, 1, or 2
+        int count = _rng.Next(DistinctiveFeatureMaxCount);
         if (count == 0) return;
 
         var types = FeaturePool.DistinctiveFeatures.Keys.ToList();
@@ -334,8 +538,8 @@ public sealed class CharacterRandomizer
         WearItem(character, Pick(ClothingPool.Footwear[gender]), "footwear", conceals: true,
             p.Limbs.LeftLeg.Foot, p.Limbs.RightLeg.Foot);
 
-        // Accessory — 30 % chance, placed on the wrist slot
-        if (_rng.NextDouble() < 0.3)
+        // Accessory — placed on the wrist slot when selected
+        if (_rng.NextDouble() < AccessoryChance)
             WearItem(character, Pick(ClothingPool.Accessories[gender]), "accessory",
                      conceals: false, p.Limbs.LeftArm.Wrist);
     }
@@ -361,18 +565,80 @@ public sealed class CharacterRandomizer
     // ── Social connections ────────────────────────────────────────────────────
 
     /// <summary>
+    /// Wires a mutual romantic connection between <paramref name="character"/>
+    /// and their co-parent(s) — the other parent of each shared child.
+    ///
+    /// Called early in queued-character completion so that orientation
+    /// derivation can observe these partner connections.
+    /// Already-partnered pairs are skipped to prevent duplicate connections.
+    /// A character may be linked to multiple co-parents if they have children
+    /// by different partners (implying half-siblings in the graph).
+    /// </summary>
+    private void LinkCoParentsAsPartners(Character character)
+    {
+        string ownGender = character.Appearance.BiologicalGender.Value.Name;
+
+        // Find all children this character was created as a parent for.
+        var ownChildren = character.LifeConnections.All
+            .Where(c => c.FromCharacterNode.Character.Id == character.Id
+                        && c.Type == ConnectionType.CloseFamily
+                        && c.Label is ("son" or "daughter"))
+            .Select(c => c.ToCharacterNode.Character)
+            .ToList();
+
+        foreach (var child in ownChildren)
+        {
+            // Find the co-parent: the OTHER parent of this child.
+            var coParent = child.LifeConnections.All
+                .Where(c => c.FromCharacterNode.Character.Id == child.Id
+                            && c.Type == ConnectionType.CloseFamily
+                            && c.Label is ("mother" or "father")
+                            && c.ToCharacterNode.Character.Id != character.Id)
+                .Select(c => c.ToCharacterNode.Character)
+                .FirstOrDefault();
+
+            if (coParent is null) continue;
+
+            // Skip if already connected as partners.
+            bool alreadyPartners = character.LifeConnections.All
+                .Any(c => c.FromCharacterNode.Character.Id == character.Id
+                          && c.ToCharacterNode.Character.Id == coParent.Id
+                          && c.Label is not null && c.Label.EndsWith("partner"));
+
+            if (alreadyPartners) continue;
+
+            // Wire a mutual romantic connection between the co-parents.
+            character.LifeConnections.Add(new Connection
+            {
+                FromCharacterNode = new ConnectionNode { Character = character },
+                ToCharacterNode = new ConnectionNode { Character = coParent },
+                Type = ConnectionType.Romantic,
+                Label = "romantic partner",
+                Strength = ConnectionStrengthPartner
+            });
+            coParent.LifeConnections.Add(new Connection
+            {
+                FromCharacterNode = new ConnectionNode { Character = coParent },
+                ToCharacterNode = new ConnectionNode { Character = character },
+                Type = ConnectionType.Romantic,
+                Label = "romantic partner",
+                Strength = ConnectionStrengthPartner
+            });
+        }
+    }
+
+    /// <summary>
     /// Generates family members and links them to <paramref name="character"/>.
     ///
-    /// Before adding any role the method builds a <c>filledRoles</c> set from
-    /// the character's existing outbound family connections. This prevents:
-    /// <list type="bullet">
-    ///   <item>Duplicate roles — e.g., a second mother.</item>
-    ///   <item>Contradictory roles — e.g., a new father added when the character
-    ///         was already created as someone else's son and carries a reverse
-    ///         "father" connection back to that character.</item>
-    /// </list>
-    /// Sibling and child roles (brother / sister / son / daughter) are not
-    /// treated as unique singletons, so multiples remain possible.
+    /// Singleton roles (mother, father) are skipped when already wired as
+    /// outbound connections — this prevents duplicates and contradictions with
+    /// reverse connections added during the child's own generation pass.
+    ///
+    /// Child roles (son, daughter) have a low probability to be added to the optional
+    /// extras when the character already has existing child connections. If a parent 
+    /// was created as part of someone else's family, their children are already 
+    /// represented by that originating character and their siblings; additional 
+    /// generated children are disconnected parallel families (half-siblings in the graph).
     /// </summary>
     private void GenerateFamily(Character character)
     {
@@ -380,9 +646,7 @@ public sealed class CharacterRandomizer
         string gender = character.Appearance.BiologicalGender.Value.Name;
         string lastName = character.Appearance.LastName.Value;
 
-        // Collect family roles that are already wired up as outbound connections
-        // (this includes reverse-role connections added when the character was
-        // first created as someone else's relative).
+        // Collect family roles already wired as outbound connections.
         var filledRoles = new HashSet<string>(
             character.LifeConnections.All
                 .Where(c => c.FromCharacterNode.Character.Id == character.Id
@@ -396,22 +660,33 @@ public sealed class CharacterRandomizer
         if (!filledRoles.Contains("mother")) roles.Add("mother");
         if (!filledRoles.Contains("father")) roles.Add("father");
 
-        // Optional repeatable extras (siblings and children).
-        var extras = new List<string> { "brother", "sister" };
-        if (age >= 20) extras.AddRange(["son", "daughter"]);
+        // Child roles are probabalistic when the character already has children:
+        // those were generated alongside the originating child character.
+        var extras = new List<string>(SiblingRoles);
+        bool hasExistingChildren = filledRoles.Contains("son") || filledRoles.Contains("daughter");
+        if (age >= MinAgeForChildren && !hasExistingChildren)
+        {
+            extras.AddRange(ChildRoles);
+            while (_rng.NextDouble() < AdditionalFamilyChance)
+                roles.Add(extras[_rng.Next(extras.Count)]);
+        }
+        else if(age >= MinAgeForChildren && hasExistingChildren && _rng.NextDouble() < ParallelChildrenChance)
+        {
+            while (_rng.NextDouble() < AdditionalFamilyChance)
+                roles.Add(extras[_rng.Next(extras.Count)]);
+            roles.Add(ChildRoles[_rng.Next(ChildRoles.Count)]);
+        }
 
-        while (_rng.NextDouble() < 0.3)
-            roles.Add(extras[_rng.Next(extras.Count)]);
 
         foreach (var role in roles)
         {
-            var (dMin, dMax) = FamilyRoleDeltas[role];
+            var (dMin, dMax) = FamilyRoleAgeDeltas[role];
             int relAge = Math.Max(0, age + _rng.Next(dMin, dMax + 1));
 
-            bool alive = _rng.NextDouble() < 0.9;
-            if (relAge > 100) alive = false;
-            else if (alive && role is "mother" or "father" && age > 70)
-                alive = _rng.NextDouble() < 0.3;
+            bool alive = _rng.NextDouble() < RelativeAliveBaseChance;
+            if (relAge > MaxAge) alive = false;
+            else if (alive && role is "mother" or "father" && age > ElderlyParentAgeThreshold)
+                alive = _rng.NextDouble() < ElderlyParentAliveChance;
 
             bool relIsMale = role is "father" or "brother" or "son";
             var namePool = relIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
@@ -434,7 +709,7 @@ public sealed class CharacterRandomizer
                 ToCharacterNode = new ConnectionNode { Character = relative },
                 Type = ConnectionType.CloseFamily,
                 Label = role,
-                Strength = 0.8f
+                Strength = ConnectionStrengthFamily
             });
 
             string reverseRole = role switch
@@ -451,7 +726,7 @@ public sealed class CharacterRandomizer
                 ToCharacterNode = new ConnectionNode { Character = character },
                 Type = ConnectionType.CloseFamily,
                 Label = reverseRole,
-                Strength = 0.8f
+                Strength = ConnectionStrengthFamily
             });
         }
     }
@@ -463,13 +738,14 @@ public sealed class CharacterRandomizer
     private void GenerateAcquaintances(Character character)
     {
         int age = character.Appearance.Age.Value;
-        int count = _rng.Next(6); // 0–5
+        int count = _rng.Next(MaxAcquaintanceCount);
 
         for (int i = 0; i < count; i++)
         {
             bool relIsMale = _rng.Next(2) == 0;
             var namePool = relIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
-            int relAge = Math.Max(1, age + _rng.Next(-5, 6));
+            int relAge = Math.Max(1,
+                age + _rng.Next(AcquaintanceAgeDeltaMin, AcquaintanceAgeDeltaMax + 1));
 
             var acquaintance = CreateMinimalCharacter(
                 relIsMale ? BiologicalGender.Male : BiologicalGender.Female,
@@ -483,14 +759,14 @@ public sealed class CharacterRandomizer
                 FromCharacterNode = new ConnectionNode { Character = character },
                 ToCharacterNode = new ConnectionNode { Character = acquaintance },
                 Type = ConnectionType.Acquaintance,
-                Strength = 0.3f
+                Strength = ConnectionStrengthAcquaintance
             });
             acquaintance.LifeConnections.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = acquaintance },
                 ToCharacterNode = new ConnectionNode { Character = character },
                 Type = ConnectionType.Acquaintance,
-                Strength = 0.3f
+                Strength = ConnectionStrengthAcquaintance
             });
         }
     }
@@ -498,9 +774,13 @@ public sealed class CharacterRandomizer
     /// <summary>
     /// Generates partners as minimal <see cref="Character"/> objects and links
     /// them via <see cref="ConnectionType.Romantic"/> (romantic) or
-    /// <see cref="ConnectionType.Friend"/> (platonic), with a
-    /// <see cref="Connection.Label"/> of "romantic partner" or "platonic partner".
+    /// <see cref="ConnectionType.Friend"/> (platonic), labelled
+    /// "romantic partner" or "platonic partner".
+    ///
     /// Only applies from <see cref="AgeCategory.YoungAdult"/> upward.
+    /// Existing partners (e.g. a co-parent wired by <see cref="LinkCoParentsAsPartners"/>)
+    /// count toward the age-appropriate maximum, so the total never exceeds
+    /// <see cref="MaxPartnersYoungAge"/> / <see cref="MaxPartnersAdultAge"/>.
     /// </summary>
     private void GeneratePartners(Character character)
     {
@@ -509,9 +789,20 @@ public sealed class CharacterRandomizer
         var orientation = character.Appearance.SexualOrientation.Value;
 
         if (AgeCategory.FromAge(age).IsMinor) return;
-        if (orientation == SexualOrientation.Asexual && _rng.NextDouble() >= 0.1) return;
+        if (orientation == SexualOrientation.Asexual && _rng.NextDouble() >= AsexualPartnerChance) return;
 
-        int maxCount = age < 30 ? 1 : 2;
+        // Respect existing partners created during co-parent linking.
+        int existingPartners = character.LifeConnections.All
+            .Count(c => c.FromCharacterNode.Character.Id == character.Id
+                        && c.Label is not null && c.Label.EndsWith("partner"));
+
+        int maxCount = age < PartnerCountYoungAgeThreshold
+            ? MaxPartnersYoungAge
+            : MaxPartnersAdultAge;
+        maxCount = Math.Max(0, maxCount - existingPartners);
+
+        if (maxCount == 0) return;
+
         int count = _rng.Next(0, maxCount + 1);
 
         for (int i = 0; i < count; i++)
@@ -527,14 +818,14 @@ public sealed class CharacterRandomizer
 
             bool partnerIsMale = partnerGender == "Male";
             var namePool = partnerIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
-            bool isRomantic = _rng.NextDouble() < 0.7;
+            bool isRomantic = _rng.NextDouble() < RomanticPartnerChance;
             string label = isRomantic ? "romantic partner" : "platonic partner";
 
             var partner = CreateMinimalCharacter(
                 partnerIsMale ? BiologicalGender.Male : BiologicalGender.Female,
                 first: Pick(namePool),
                 last: Pick(NamePool.LastNames),
-                age: Math.Max(18, age + _rng.Next(-5, 6)),
+                age: Math.Max(MinPartnerAge, age + _rng.Next(PartnerAgeDeltaMin, PartnerAgeDeltaMax + 1)),
                 isAlive: true);
 
             character.LifeConnections.Add(new Connection
@@ -543,7 +834,7 @@ public sealed class CharacterRandomizer
                 ToCharacterNode = new ConnectionNode { Character = partner },
                 Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
                 Label = label,
-                Strength = 0.9f
+                Strength = ConnectionStrengthPartner
             });
             partner.LifeConnections.Add(new Connection
             {
@@ -551,7 +842,7 @@ public sealed class CharacterRandomizer
                 ToCharacterNode = new ConnectionNode { Character = character },
                 Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
                 Label = label,
-                Strength = 0.9f
+                Strength = ConnectionStrengthPartner
             });
         }
     }
@@ -570,12 +861,12 @@ public sealed class CharacterRandomizer
             return null;
 
         if (category == AgeCategory.Teen)
-            return _rng.NextDouble() < 0.3
+            return _rng.NextDouble() < TeenWorkChance
                 ? Pick(WorkPool.ByAgeGroup[AgeCategory.Teen.Name])
                 : null;
 
         if (category == AgeCategory.Senior)
-            return _rng.NextDouble() < 0.6
+            return _rng.NextDouble() < SeniorWorkChance
                 ? Pick(WorkPool.ByAgeGroup[AgeCategory.Senior.Name])
                 : "retired";
 

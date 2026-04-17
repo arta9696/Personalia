@@ -14,7 +14,7 @@ public sealed class Connection
 
     // ── Endpoints ─────────────────────────────────────────────────────────────
 
-    /// <summary>FromCharac — the origin character node ID.</summary>
+    /// <summary>FromChar — the origin character node ID.</summary>
     public required ConnectionNode FromCharacterNode { get; init; }
 
     /// <summary>ToChar — the destination character node ID.</summary>
@@ -63,42 +63,111 @@ public sealed class ConnectionNode
 /// <summary>
 /// Жизненные Связи — the directed multigraph of a character's relationships.
 ///
-/// Represents: a directed multigraph where nodes are characters
-/// and edges are typed, weighted connections.
-/// Multiple parallel edges between the same pair of nodes are allowed
-/// (e.g. someone can be both a colleague AND a friend).
+/// Represents: a directed multigraph where nodes are characters and edges are
+/// typed, weighted connections. Multiple parallel edges between the same pair
+/// of nodes are allowed (e.g. someone can be both a colleague AND a friend).
+///
+/// All filter methods (<see cref="From"/>, <see cref="To"/>, <see cref="OfType"/>,
+/// <see cref="Between"/>) return a new <see cref="LifeConnections"/> so that
+/// results can be further filtered or passed as a unit. Use the <see cref="All"/>
+/// property when raw list access is required. Use <see cref="Union(LifeConnections,LifeConnections)"/>
+/// to merge two graphs into a single deduplicated graph.
 /// </summary>
 public sealed class LifeConnections
 {
     private readonly List<Connection> _connections = [];
 
+    // ── Core ──────────────────────────────────────────────────────────────────
+
+    /// <summary>All connections in this graph as an ordered read-only list.</summary>
     public IReadOnlyList<Connection> All => _connections;
 
-    /// <summary>Add a new connection to the graph.</summary>
-    public void Add(Connection connection) => _connections.Add(connection);
+    /// <summary>Number of connections currently in this graph.</summary>
+    public int Count => _connections.Count;
 
-    /// <summary>Remove a connection by its ID.</summary>
+    /// <summary>Add a new connection to the graph.</summary>
+    public bool Add(Connection connection)
+    {
+        if (_connections.Any(c => c.Id == connection.Id))
+            return false;
+        _connections.Add(connection);
+        return true;
+    }
+
+    /// <summary>Remove a connection by its ID. Returns <c>true</c> if found and removed.</summary>
     public bool Remove(Guid connectionId)
     {
         var target = _connections.FirstOrDefault(c => c.Id == connectionId);
         return target is not null && _connections.Remove(target);
     }
 
-    /// <summary>All connections originating FROM a character.</summary>
-    public IEnumerable<Connection> From(Guid characterId)
-        => _connections.Where(c => c.FromCharacterNode.Character.Id == characterId);
+    // ── Composable filters — each returns a new LifeConnections ──────────────
 
-    /// <summary>All connections pointing TO a character.</summary>
-    public IEnumerable<Connection> To(Guid characterId)
-        => _connections.Where(c => c.ToCharacterNode.Character.Id == characterId);
+    /// <summary>
+    /// Returns a new graph containing only connections where the FROM node
+    /// belongs to <paramref name="characterId"/>.
+    /// </summary>
+    public LifeConnections From(Guid characterId) =>
+        Filter(c => c.FromCharacterNode.Character.Id == characterId);
 
-    /// <summary>All connections of a given type.</summary>
-    public IEnumerable<Connection> OfType(ConnectionType type)
-        => _connections.Where(c => c.Type == type);
+    /// <summary>
+    /// Returns a new graph containing only connections where the TO node
+    /// belongs to <paramref name="characterId"/>.
+    /// </summary>
+    public LifeConnections To(Guid characterId) =>
+        Filter(c => c.ToCharacterNode.Character.Id == characterId);
 
-    /// <summary>All connections between two specific characters (in either direction).</summary>
-    public IEnumerable<Connection> Between(Guid characterA, Guid characterB)
-        => _connections.Where(c =>
-            (c.FromCharacterNode.Character.Id == characterA && c.ToCharacterNode.Character.Id == characterB) ||
-            (c.FromCharacterNode.Character.Id == characterB && c.ToCharacterNode.Character.Id == characterA));
+    /// <summary>
+    /// Returns a new graph containing only connections of the given
+    /// <paramref name="type"/>.
+    /// </summary>
+    public LifeConnections OfType(params ConnectionType[] types) =>
+        Filter(c => types.Contains(c.Type));
+
+    /// <summary>
+    /// Returns a new graph containing all connections between
+    /// <paramref name="characterA"/> and <paramref name="characterB"/>
+    /// in either direction.
+    /// </summary>
+    public LifeConnections Between(Guid characterA, Guid characterB) =>
+        Filter(c =>
+            (c.FromCharacterNode.Character.Id == characterA &&
+             c.ToCharacterNode.Character.Id == characterB) ||
+            (c.FromCharacterNode.Character.Id == characterB &&
+             c.ToCharacterNode.Character.Id == characterA));
+
+    // ── Set operations ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a new <see cref="LifeConnections"/> containing every connection
+    /// from <paramref name="a"/> and <paramref name="b"/>, deduplicated by
+    /// connection <see cref="Connection.Id"/>.
+    /// </summary>
+    public static LifeConnections Union(LifeConnections a, LifeConnections b)
+    {
+        var result = new LifeConnections();
+        var seen = new HashSet<Guid>();
+        foreach (var conn in a._connections.Concat(b._connections))
+            if (seen.Add(conn.Id))
+                result.Add(conn);
+        return result;
+    }
+
+    /// <summary>
+    /// Returns a new <see cref="LifeConnections"/> containing every connection
+    /// from this graph and <paramref name="other"/>, deduplicated by
+    /// connection <see cref="Connection.Id"/>.
+    /// </summary>
+    public LifeConnections Union(LifeConnections other) => Union(this, other);
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
+    private LifeConnections Filter(Func<Connection, bool> predicate)
+    {
+        var result = new LifeConnections();
+        foreach (var c in _connections)
+            if (predicate(c))
+                result.Add(c);
+        return result;
+    }
 }

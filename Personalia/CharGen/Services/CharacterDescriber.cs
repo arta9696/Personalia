@@ -86,9 +86,8 @@ public sealed partial class CharacterDescriber
         // ── Status — read from LifeConnections ────────────────────────────────
         sb.AppendLine("Status");
 
-        var outbound = character.LifeConnections.All
-            .Where(c => c.FromCharacterNode.Character.Id == character.Id)
-            .ToList();
+        // All outbound connections from this character, using the typed filter.
+        var outbound = character.LifeConnections.From(character.Id).All;
 
         // Family (CloseFamily + Family connections)
         var familyConns = outbound.Where(c => c.Type.IsFamily).ToList();
@@ -143,7 +142,6 @@ public sealed partial class CharacterDescriber
 
     /// <summary>
     /// Converts skeleton height in centimetres to a descriptive label.
-    /// Male thresholds are offset by 12 cm vs. female (average male–female delta).
     /// </summary>
     private static string HeightToDescription(float cm)
     {
@@ -232,10 +230,7 @@ public sealed partial class CharacterDescriber
     private static string ReplaceLastOccurrence(string source, string find, string replace)
     {
         int place = source.LastIndexOf(find);
-
-        if (place == -1)
-            return source;
-
+        if (place == -1) return source;
         return source.Remove(place, find.Length).Insert(place, replace);
     }
 }
