@@ -1,73 +1,83 @@
-﻿using Personalia.Models;
+﻿using Personalia.Localization;
+using Personalia.Localization.En;
+using Personalia.Models;
 using Personalia.Models.ConnectionSpace;
 using Personalia.Models.Enums;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Personalia.CharGen.Services;
 
 /// <summary>
-/// Formats a <see cref="Character"/> as a human-readable English description.
+/// CharacterDescriber — formats a <see cref="Character"/> as a human-readable description.
 ///
-/// Social connections (family, acquaintances, partners) are read directly
-/// from <see cref="Character.LifeConnections"/> — no separate DTO is required.
-/// Height and build labels are derived on-the-fly from physique model data.
+/// Reads social connections from the shared <see cref="ConnectionGraph"/> rather than
+/// from per-character lists. Locale-specific strings are resolved through
+/// <see cref="ILocalizationProvider"/>; the default locale is English.
 /// </summary>
-public sealed partial class CharacterDescriber
+public sealed class CharacterDescriber
 {
-    /// <summary>
-    /// Produces the full description block for <paramref name="character"/>.
-    /// </summary>
-    public string Describe(Character character)
+    private readonly ILocalizationProvider _loc;
+
+    /// <param name="graph">The shared connection graph for the current session.</param>
+    /// <param name="loc">
+    /// Localisation provider (defaults to <see cref="EnglishLocalizationProvider"/>).
+    /// </param>
+    public CharacterDescriber(ILocalizationProvider? loc = null)
+    {
+        _loc = loc ?? new EnglishLocalizationProvider();
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>Produces the full description block for <paramref name="character"/>.</summary>
+    public string Describe(Character character, ConnectionGraph graph)
     {
         var app = character.Appearance;
         var sb = new StringBuilder();
 
-        // ── Resolved values ───────────────────────────────────────────────────
-        string firstName = app.FirstName.Value;
-        string lastName = app.LastName.Value;
-        int age = app.Age.Value;
-        string gender = app.BiologicalGender.Value.Name.ToLower();
-
+        // ── Resolved appearance values ─────────────────────────────────────────
         var p = app.Physique;
-        string skin = FormatName(p.Torso.Organs.Skin.Color.Name);
-        string eyeCol = FormatName(p.Head.Eyes.Color.Name);
-        string eyeShp = FormatName(p.Head.Eyes.Shape.Name);
-        string hairLen = FormatName(p.Head.Hair.Length.Name);
-        string hairCol = FormatName(p.Head.Hair.Color.Name);
 
-        // Birthday — read from the typed HiddenValue properties.
-        string birthdayMonth = app.BirthdayMonth.Value.Name;
-        int birthdayDay = app.BirthdayDay.Value;
+        string skin = _loc.GetEnumValue("SkinColor", p.Torso.Organs.Skin.Color.Name);
+        string eyeCol = _loc.GetEnumValue("EyeColor", p.Head.Eyes.Color.Name);
+        string eyeShp = _loc.GetEnumValue("EyeShape", p.Head.Eyes.Shape.Name);
+        string hairLen = _loc.GetEnumValue("HairLength", p.Head.Hair.Length.Name);
+        string hairCol = _loc.GetEnumValue("HairColor", p.Head.Hair.Color.Name);
+
+        string birthMonth = _loc.GetEnumValue("Month", app.BirthdayMonth.Value.Name);
+        int birthDay = app.BirthdayDay.Value;
+        int age = app.Age.Value;
 
         // ── Header ────────────────────────────────────────────────────────────
-        sb.AppendLine(
-            $"Your name is {firstName} {lastName}. " +
-            $"You are {age} years old. " +
-            $"Your birthday is {birthdayMonth} {birthdayDay}.");
+        sb.AppendLine(_loc.Format(Lk.Describer.Header,
+            app.FirstName.Value, app.LastName.Value, age, birthMonth, birthDay));
 
         // ── Appearance ────────────────────────────────────────────────────────
-        sb.AppendLine("Appearance");
-        sb.Append(
-            $"You are {AgeGroupLabel(age)} {gender}. " +
-            $"You are {OrientationLabel(app.SexualOrientation.Value)}. " +
-            $"You have {HeightToDescription(p.Torso.Organs.Skeleton.HeightCm)} height " +
-            $"and your build would best be described as " +
-            $"{BuildToDescription(p.Torso.Organs.Muscles.Volume, p.Torso.Organs.FattyTissue.Volume)}. ");
-        sb.AppendLine(
-            $"You have {skin} skin, {eyeCol} {eyeShp} eyes " +
-            $"and your {hairLen} hair is {hairCol}.");
+        sb.AppendLine(_loc.Get(Lk.Describer.SectionAppearance));
 
-        if (app.DistinctiveFeatures.Count > 0)
+        sb.Append(_loc.Format(Lk.Describer.AppearanceLine1,
+            AgeGroupLabel(age),
+            GenderLabel(app.BiologicalGender.Value),
+            OrientationLabel(app.SexualOrientation.Value),
+            HeightLabel(p.Torso.Organs.Skeleton.HeightCm),
+            BuildLabel(p.Torso.Organs.Muscles.Volume, p.Torso.Organs.FattyTissue.Volume)));
+
+        sb.AppendLine(_loc.Format(Lk.Describer.AppearanceLine2,
+            skin, eyeCol, eyeShp, hairLen, hairCol));
+
+        if (app.DistinctiveFeatures.Count == 1)
         {
-            string suffix = app.DistinctiveFeatures.Count == 1 ? " is " : "s are ";
-            sb.AppendLine(
-                $"Your most distinguishing feature{suffix}" +
-                ReplaceLastOccurrence(string.Join(", ", app.DistinctiveFeatures), ", ", " and ") + ".");
+            sb.AppendLine(_loc.Format(Lk.Describer.DistinctiveFeature,
+                app.DistinctiveFeatures[0]));
+        }
+        else if (app.DistinctiveFeatures.Count > 1)
+        {
+            sb.AppendLine(_loc.Format(Lk.Describer.DistinctiveFeatures,
+                JoinWithAnd(app.DistinctiveFeatures)));
         }
 
         // ── Clothing ──────────────────────────────────────────────────────────
-        sb.AppendLine("Clothing");
+        sb.AppendLine(_loc.Get(Lk.Describer.SectionClothing));
 
         var worn = character.Clothing.WornItems;
         string legs = FindByTag(worn, "legwear");
@@ -78,145 +88,124 @@ public sealed partial class CharacterDescriber
             .Select(i => i.Name)
             .ToList();
 
-        sb.Append($"You are wearing {legs}, {top} and {feet}.");
+        sb.Append(_loc.Format(Lk.Describer.ClothingBase, legs, top, feet));
         if (accessories.Count > 0)
-            sb.Append($" You also have {ReplaceLastOccurrence(string.Join(", ", accessories), ", ", " and ")}.");
+            sb.Append(_loc.Format(Lk.Describer.ClothingAccessories, JoinWithAnd(accessories)));
         sb.AppendLine();
 
-        // ── Status — read from LifeConnections ────────────────────────────────
-        sb.AppendLine("Status");
+        // ── Status — read from the shared ConnectionGraph ─────────────────────
+        sb.AppendLine(_loc.Get(Lk.Describer.SectionStatus));
 
-        // All outbound connections from this character, using the typed filter.
-        var outbound = character.LifeConnections.From(character.Id).All;
-
-        // Family (CloseFamily + Family connections)
-        var familyConns = outbound.Where(c => c.Type.IsFamily).ToList();
-        sb.Append("Your family: ");
+        // Family
+        var familyConns = graph.From(character.Id).Family().All;
+        sb.Append(_loc.Get(Lk.Describer.FamilyPrefix));
         sb.AppendLine(familyConns.Count > 0
             ? string.Join(", ", familyConns.Select(c =>
             {
                 var rel = c.ToCharacterNode.Character;
                 string role = c.Label ?? c.Type.DisplayName;
-                return $"{role} named {rel.GetDisplayName(privilegedObserver: true)} " +
-                       $"(age {rel.Appearance.Age.Value}, {(rel.IsAlive ? "alive" : "deceased")})";
+                string alive = _loc.Get(rel.IsAlive ? Lk.Describer.Alive : Lk.Describer.Deceased);
+                return _loc.Format(Lk.Describer.FamilyEntry,
+                    role, rel.GetDisplayName(privilegedObserver: true),
+                    rel.Appearance.Age.Value, alive);
             }))
-            : "None");
+            : _loc.Get(Lk.Describer.None));
 
         // Acquaintances
-        var acqConns = outbound.Where(c => c.Type == ConnectionType.Acquaintance).ToList();
-        sb.Append("Your acquaintances: ");
+        var acqConns = graph.From(character.Id).OfType(ConnectionType.Acquaintance).All;
+        sb.Append(_loc.Get(Lk.Describer.AcquaintancePrefix));
         sb.AppendLine(acqConns.Count > 0
             ? string.Join(", ", acqConns.Select(c =>
             {
                 var rel = c.ToCharacterNode.Character;
-                return $"{rel.GetDisplayName(privilegedObserver: true)} (age {rel.Appearance.Age.Value})";
+                return _loc.Format(Lk.Describer.AcquaintanceEntry,
+                    rel.GetDisplayName(privilegedObserver: true),
+                    rel.Appearance.Age.Value);
             }))
-            : "None");
+            : _loc.Get(Lk.Describer.None));
 
-        // Partners — identified by the "partner" label suffix set during generation
-        var partnerConns = outbound
-            .Where(c => c.Label is not null && c.Label.EndsWith("partner"))
-            .ToList();
-        sb.Append("Your partners: ");
+        // Partners
+        var partnerConns = graph.From(character.Id).Partners().All;
+        sb.Append(_loc.Get(Lk.Describer.PartnerPrefix));
         sb.AppendLine(partnerConns.Count > 0
             ? string.Join(", ", partnerConns.Select(c =>
             {
                 var rel = c.ToCharacterNode.Character;
-                return $"{rel.GetDisplayName(privilegedObserver: true)} ({c.Label}, age {rel.Appearance.Age.Value})";
+                return _loc.Format(Lk.Describer.PartnerEntry,
+                    rel.GetDisplayName(privilegedObserver: true),
+                    c.Label, rel.Appearance.Age.Value);
             }))
-            : "None");
+            : _loc.Get(Lk.Describer.None));
 
-        // Work / Occupation
-        sb.Append("You're currently ");
+        // Occupation
         sb.AppendLine(character.Occupation switch
         {
-            null => "unemployed.",
-            "retired" => "retired.",
-            var w => $"working at {w}."
+            null => _loc.Get(Lk.Describer.Unemployed),
+            "retired" => _loc.Get(Lk.Describer.Retired),
+            var w => _loc.Format(Lk.Describer.Working, w)
         });
 
         return sb.ToString().TrimEnd();
     }
 
-    // ── Appearance helpers ────────────────────────────────────────────────────
+    // ── Label helpers ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Converts skeleton height in centimetres to a descriptive label.
-    /// </summary>
-    private static string HeightToDescription(float cm)
+    private string AgeGroupLabel(int age)
     {
-        return cm switch
+        var cat = AgeCategory.FromAge(age);
+        if (cat == AgeCategory.Child) return _loc.Get(Lk.AgeGroup.Child);
+        if (cat == AgeCategory.Teen) return _loc.Get(Lk.AgeGroup.Teen);
+        if (cat == AgeCategory.YoungAdult) return _loc.Get(Lk.AgeGroup.YoungAdult);
+        if (cat == AgeCategory.Adult) return _loc.Get(Lk.AgeGroup.Adult);
+        if (cat == AgeCategory.MiddleAged) return _loc.Get(Lk.AgeGroup.MiddleAged);
+        return _loc.Get(Lk.AgeGroup.Senior);
+    }
+
+    private string GenderLabel(BiologicalGender g)
+        => g == BiologicalGender.Male
+            ? _loc.Get(Lk.Gender.Male)
+            : _loc.Get(Lk.Gender.Female);
+
+    private string OrientationLabel(SexualOrientation o)
+    {
+        if (o == SexualOrientation.Heterosexual) return _loc.Get(Lk.Orientation.Heterosexual);
+        if (o == SexualOrientation.Homosexual) return _loc.Get(Lk.Orientation.Homosexual);
+        if (o == SexualOrientation.Bisexual) return _loc.Get(Lk.Orientation.Bisexual);
+        if (o == SexualOrientation.Asexual) return _loc.Get(Lk.Orientation.Asexual);
+        return _loc.Get(Lk.Orientation.Unknown);
+    }
+
+    private string HeightLabel(float cm) => cm switch
+    {
+        < 160f => _loc.Get(Lk.Height.VeryShort),
+        < 167f => _loc.Get(Lk.Height.Short),
+        < 172f => _loc.Get(Lk.Height.SlightlyShort),
+        < 178f => _loc.Get(Lk.Height.Average),
+        < 183f => _loc.Get(Lk.Height.SlightlyTall),
+        < 190f => _loc.Get(Lk.Height.Tall),
+        _ => _loc.Get(Lk.Height.VeryTall)
+    };
+
+    private string BuildLabel(float muscle, float fat)
+    {
+        bool lowM = muscle < 0.33f;
+        bool highM = muscle > 0.66f;
+        bool lowF = fat < 0.33f;
+        bool highF = fat > 0.66f;
+
+        string key = (lowM, highM, lowF, highF) switch
         {
-            < 160f => "very short",
-            < 167f => "short",
-            < 172f => "slightly short",
-            < 178f => "average",
-            < 183f => "slightly tall",
-            < 190f => "tall",
-            _ => "very tall"
+            (true, _, true, _) => Lk.Build.Skinny,
+            (true, _, false, false) => Lk.Build.Thin,
+            (true, _, _, true) => Lk.Build.Plump,
+            (false, false, true, _) => Lk.Build.Lean,
+            (false, false, _, true) => Lk.Build.Stocky,
+            (_, true, true, _) => Lk.Build.Ripped,
+            (_, true, false, false) => Lk.Build.Muscular,
+            (_, true, _, true) => Lk.Build.Brawny,
+            _ => Lk.Build.Average
         };
-    }
-
-    /// <summary>
-    /// Converts muscle-volume and fat-volume model floats (0–1) to a build label.
-    /// </summary>
-    private static string BuildToDescription(float muscle, float fat)
-    {
-        bool lowMuscle = muscle < 0.33f;
-        bool highMuscle = muscle > 0.66f;
-        bool lowFat = fat < 0.33f;
-        bool highFat = fat > 0.66f;
-
-        return (lowMuscle, highMuscle, lowFat, highFat) switch
-        {
-            (true, _, true, _) => "skinny",
-            (true, _, false, false) => "thin",
-            (true, _, _, true) => "plump",
-            (false, false, true, _) => "lean",
-            (false, false, _, true) => "stocky",
-            (_, true, true, _) => "ripped",
-            (_, true, false, false) => "muscular",
-            (_, true, _, true) => "brawny",
-            _ => "average build"
-        };
-    }
-
-    // ── Label mappers ─────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Converts a PascalCase SmartEnum name to a lowercase human-readable phrase.
-    /// e.g. "DarkBrown" → "dark brown", "CloseCropped" → "close cropped".
-    /// </summary>
-    private static string FormatName(string pascalName)
-        => CamelCaseSplitter().Replace(pascalName, " ").ToLower();
-
-    [GeneratedRegex(@"(?<=[a-z])(?=[A-Z])")]
-    private static partial Regex CamelCaseSplitter();
-
-    private static string OrientationLabel(SexualOrientation o)
-    {
-        if (o == SexualOrientation.Heterosexual) return "straight";
-        if (o == SexualOrientation.Homosexual) return "gay";
-        if (o == SexualOrientation.Bisexual) return "bisexual";
-        if (o == SexualOrientation.Asexual) return "asexual";
-        return "unknown";
-    }
-
-    /// <summary>
-    /// Maps age to a display label by delegating to <see cref="AgeCategory.FromAge"/>.
-    /// This keeps the boundary definitions in one place: the domain model.
-    /// </summary>
-    private static string AgeGroupLabel(int age)
-    {
-        var category = AgeCategory.FromAge(age);
-
-        if (category == AgeCategory.Child) return "child";
-        if (category == AgeCategory.Teen) return "teenager";
-        if (category == AgeCategory.YoungAdult) return "young adult";
-        if (category == AgeCategory.Adult) return "adult";
-        if (category == AgeCategory.MiddleAged) return "middle-aged";
-        if (category == AgeCategory.Senior) return "elderly";
-        return "unknown";
+        return _loc.Get(key);
     }
 
     // ── Clothing helpers ──────────────────────────────────────────────────────
@@ -227,10 +216,14 @@ public sealed partial class CharacterDescriber
 
     // ── String helpers ────────────────────────────────────────────────────────
 
-    private static string ReplaceLastOccurrence(string source, string find, string replace)
+    /// <summary>
+    /// Joins items with ", " and replaces the final ", " with " and ".
+    /// Works for any item count including single-item lists.
+    /// </summary>
+    private static string JoinWithAnd(IEnumerable<string> items)
     {
-        int place = source.LastIndexOf(find);
-        if (place == -1) return source;
-        return source.Remove(place, find.Length).Insert(place, replace);
+        var joined = string.Join(", ", items);
+        int last = joined.LastIndexOf(", ", StringComparison.Ordinal);
+        return last == -1 ? joined : joined.Remove(last, 2).Insert(last, " and ");
     }
 }

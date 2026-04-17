@@ -1,10 +1,17 @@
 ﻿using Personalia.CharGen.Services;
+using Personalia.Localization;
+using Personalia.Models.ConnectionSpace;
 
 namespace Personalia.CharGen;
 
 /// <summary>
 /// Generates <paramref name="count"/> characters, prints each to the console,
 /// and writes all of them to <paramref name="outputFile"/>.
+///
+/// A single <see cref="ConnectionGraph"/> is created here and shared between
+/// <see cref="CharacterRandomizer"/> (which populates it) and
+/// <see cref="CharacterDescriber"/> (which reads from it). This means the
+/// describer always sees the fully up-to-date social graph for every character.
 /// </summary>
 public static class CharGenExample
 {
@@ -13,21 +20,28 @@ public static class CharGenExample
     /// <param name="count">Number of characters to generate (default: 50).</param>
     /// <param name="outputFile">Output file path (default: "characters.txt").</param>
     /// <param name="seed">Optional RNG seed for reproducible runs.</param>
+    /// <param name="loc">
+    /// Optional localisation provider. Defaults to English when <c>null</c>.
+    /// Pass a <c>RussianLocalizationProvider</c> for Cyrillic output, or supply
+    /// any custom <see cref="ILocalizationProvider"/> implementation.
+    /// </param>
     public static void Run(
         int count = 50,
         string outputFile = "characters.txt",
-        int? seed = null)
+        int? seed = null,
+        ILocalizationProvider? loc = null)
     {
-        var generator = new CharacterRandomizer(seed);
-        var describer = new CharacterDescriber();
+        var graph = new ConnectionGraph();
+        var generator = new CharacterRandomizer(graph, seed);
+        var describer = new CharacterDescriber(loc);
 
-        using var writer = new StreamWriter(outputFile, append: false,
-                                            encoding: System.Text.Encoding.UTF8);
+        using var writer = new StreamWriter(
+            outputFile, append: false, encoding: System.Text.Encoding.UTF8);
 
         for (int i = 0; i < count; i++)
         {
             var character = generator.Generate();
-            var description = describer.Describe(character);
+            var description = describer.Describe(character, graph);
 
             Console.WriteLine(Separator);
             Console.WriteLine(description);

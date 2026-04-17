@@ -10,38 +10,34 @@ using Personalia.Models.Enums;
 namespace Personalia.CharGen.Services;
 
 /// <summary>
-/// Generates <see cref="Character"/> instances and maintains a per-instance
-/// queue of partially-initialised characters so that every person referenced
-/// as a social connection eventually receives a full profile.
+/// CharacterRandomizer — generates <see cref="Character"/> instances and populates the
+/// shared <see cref="ConnectionGraph"/> with all social edges.
 ///
 /// Queue discipline
 /// ────────────────
 /// • When the queue is empty a brand-new <see cref="Character"/> is built from
 ///   scratch (identity, age, physique, clothing, connections, occupation).
-/// • After completing any character — new or queued — all alive, not-yet-
-///   processed characters found in its outbound connections are appended to the
-///   queue, sorted oldest-to-youngest: family connections first, then non-family.
+/// • After completing any character all alive, not-yet-processed characters found
+///   in their outbound connections are appended to the queue, sorted
+///   oldest-to-youngest: family connections first, then non-family.
 /// • Deceased minimal characters are never enqueued.
 /// • Every <see cref="CharacterRandomizer"/> instance owns its own queue and
 ///   processed-ID set, so multiple generators run independently.
 ///
+/// Sibling–parent wiring fix
+/// ────────────────────────────────
+/// Immediately after a sibling minimal character is created, <see cref="WireSiblingToParents"/>
+/// copies the originating character's parent edges (mother/father) to the new sibling,
+/// and writes the reciprocal child edges from the parents back to the sibling.
+/// When the sibling is later dequeued, <c>filledRoles</c> already contains "mother" and
+/// "father", so <see cref="GenerateFamily"/> skips generating new unrelated parents.
+///
 /// Queued-character completion
 /// ───────────────────────────
-/// A minimal character already carries: <see cref="BiologicalGender"/>,
-/// <see cref="Appearance.FirstName"/>, <see cref="Appearance.LastName"/>,
-/// <see cref="Appearance.Age"/>, and at least one reverse
-/// <see cref="Connection"/>. Completion for queued characters:
-///
 /// 1. Co-parents are wired as romantic partners (<see cref="LinkCoParentsAsPartners"/>).
-/// 2. Orientation is derived from existing partner connections rather than
-///    chosen at random (<see cref="SetOrientationFromPartners"/>):
-///    • All opposite-gender partners → Heterosexual.
-///    • All same-gender partners → Homosexual.
-///    • Mixed → weighted heavily toward Bisexual, leaning by majority gender.
-///    • No partners → weighted toward Asexual proportionally to age.
-/// 3. If the character was created as a parent (has existing son/daughter
-///    connections), no additional child connections are generated — those
-///    siblings were already wired when the originating child was processed.
+/// 2. Orientation is derived from existing partner connections
+///    (<see cref="SetOrientationFromPartners"/>).
+/// 3. If the character already has child connections, additional children are generated with very low chance.
 /// </summary>
 public sealed class CharacterRandomizer
 {
@@ -102,7 +98,6 @@ public sealed class CharacterRandomizer
 
     /// <summary>Upper exclusive bound for random acquaintance count (0 to max-1).</summary>
     private const int MaxAcquaintanceCount = 6;
-
     private const int AcquaintanceAgeDeltaMin = -5;
     private const int AcquaintanceAgeDeltaMax = 5;
 
@@ -113,10 +108,8 @@ public sealed class CharacterRandomizer
 
     /// <summary>Age below which a character may have at most one partner.</summary>
     private const int PartnerCountYoungAgeThreshold = 30;
-
     private const int MaxPartnersYoungAge = 1;
     private const int MaxPartnersAdultAge = 2;
-
     private const int PartnerAgeDeltaMin = -5;
     private const int PartnerAgeDeltaMax = 5;
 
@@ -180,26 +173,28 @@ public sealed class CharacterRandomizer
     // ── Instance state ────────────────────────────────────────────────────────
 
     private readonly Random _rng;
+    private readonly ConnectionGraph _graph;
 
     /// <summary>
-    /// Characters that have been created as minimal references and are
-    /// waiting to be fully completed on a future <see cref="Generate"/> call.
-    /// Sorted oldest-to-youngest (family first, then non-family) at the time
-    /// each batch is appended.
+    /// Characters created as minimal references, waiting to be fully completed.
+    /// Sorted oldest-to-youngest (family first, then non-family) when each batch
+    /// is appended.
     /// </summary>
     private readonly Queue<Character> _queue = new();
 
     /// <summary>
-    /// Tracks every character ID that has already been enqueued or fully
-    /// generated, preventing the same person from being enqueued twice.
+    /// Every character ID that has already been enqueued or fully generated,
+    /// preventing the same person from being processed twice.
     /// </summary>
     private readonly HashSet<Guid> _processed = new();
 
     // ── Construction ──────────────────────────────────────────────────────────
 
+    /// <param name="graph">The shared connection graph for this session.</param>
     /// <param name="seed">Optional RNG seed for reproducible output.</param>
-    public CharacterRandomizer(int? seed = null)
+    public CharacterRandomizer(ConnectionGraph graph, int? seed = null)
     {
+        _graph = graph;
         _rng = seed.HasValue ? new Random(seed.Value) : new Random();
     }
 
@@ -208,11 +203,9 @@ public sealed class CharacterRandomizer
     /// <summary>
     /// Returns the next fully populated <see cref="Character"/>.
     ///
-    /// If the internal queue is non-empty the front character (a previously
-    /// created minimal character) is dequeued and completed without overwriting
-    /// already-set fields. Otherwise a brand-new character is created from
-    /// scratch. In both cases all alive, not-yet-processed connections produced
-    /// during completion are sorted and appended to the queue.
+    /// If the internal queue is non-empty the front character is dequeued and
+    /// completed without overwriting already-set fields. Otherwise a brand-new
+    /// character is created from scratch.
     /// </summary>
     public Character Generate()
     {
@@ -252,8 +245,6 @@ public sealed class CharacterRandomizer
 
         if (isFromQueue)
         {
-            // Gender, name, and age were set by CreateMinimalCharacter.
-            // Wire co-parents first so orientation derivation sees those partners.
             isMale = character.Appearance.BiologicalGender.Value == BiologicalGender.Male;
             LinkCoParentsAsPartners(character);
             SetOrientationFromPartners(character);
@@ -288,27 +279,25 @@ public sealed class CharacterRandomizer
     /// </summary>
     private void EnqueueMinimalCharacters(Character character)
     {
-        var outbound = character.LifeConnections.From(character.Id).All;
+        var outbound = _graph.From(character.Id);
 
-        IEnumerable<Character> familyCandidates = outbound
-            .Where(c => c.Type.IsFamily)
+        var familyCandidates = outbound
+            .Family()
+            .Alive()
+            .All
             .Select(c => c.ToCharacterNode.Character)
-            .Where(c => c.IsAlive)
             .OrderByDescending(c => c.Appearance.Age.Value);
 
-        IEnumerable<Character> nonFamilyCandidates = outbound
-            .Where(c => !c.Type.IsFamily)
+        var nonFamilyCandidates = outbound
+            .NonFamily()
+            .Alive()
+            .All
             .Select(c => c.ToCharacterNode.Character)
-            .Where(c => c.IsAlive)
             .OrderByDescending(c => c.Appearance.Age.Value);
 
-        foreach (Character candidate in familyCandidates.Concat(nonFamilyCandidates))
-        {
-            // _processed.Add returns false if the ID is already present,
-            // so each character is enqueued at most once across all passes.
+        foreach (var candidate in familyCandidates.Concat(nonFamilyCandidates))
             if (_processed.Add(candidate.Id))
                 _queue.Enqueue(candidate);
-        }
     }
 
     // ── Identity ──────────────────────────────────────────────────────────────
@@ -360,11 +349,7 @@ public sealed class CharacterRandomizer
     /// </summary>
     private void SetOrientationFromPartners(Character character)
     {
-        var partnerConns = character.LifeConnections.All
-            .Where(c => c.FromCharacterNode.Character.Id == character.Id
-                        && c.Label is not null
-                        && c.Label.EndsWith("partner"))
-            .ToList();
+        var partnerConns = _graph.From(character.Id).Partners().All;
 
         SexualOrientation orientation;
 
@@ -401,9 +386,7 @@ public sealed class CharacterRandomizer
             + OrientationNoPartnerAsexualAgeWeight * ((double)age / MaxAge);
 
         double roll = _rng.NextDouble();
-
-        if (roll < asexualWeight)
-            return SexualOrientation.Asexual;
+        if (roll < asexualWeight) return SexualOrientation.Asexual;
 
         // Remaining probability split equally among the other three orientations.
         double each = (1.0 - asexualWeight) / 3.0;
@@ -566,79 +549,46 @@ public sealed class CharacterRandomizer
 
     /// <summary>
     /// Wires a mutual romantic connection between <paramref name="character"/>
-    /// and their co-parent(s) — the other parent of each shared child.
-    ///
-    /// Called early in queued-character completion so that orientation
-    /// derivation can observe these partner connections.
-    /// Already-partnered pairs are skipped to prevent duplicate connections.
-    /// A character may be linked to multiple co-parents if they have children
-    /// by different partners (implying half-siblings in the graph).
+    /// and each of their co-parents (the other parent of each shared child).
+    /// Already-partnered pairs are skipped to prevent duplicates.
     /// </summary>
     private void LinkCoParentsAsPartners(Character character)
     {
-        string ownGender = character.Appearance.BiologicalGender.Value.Name;
-
-        // Find all children this character was created as a parent for.
-        var ownChildren = character.LifeConnections.All
-            .Where(c => c.FromCharacterNode.Character.Id == character.Id
-                        && c.Type == ConnectionType.CloseFamily
-                        && c.Label is ("son" or "daughter"))
+        var ownChildren = _graph.From(character.Id).Children()
+            .All
             .Select(c => c.ToCharacterNode.Character)
             .ToList();
 
         foreach (var child in ownChildren)
         {
-            // Find the co-parent: the OTHER parent of this child.
-            var coParent = child.LifeConnections.All
-                .Where(c => c.FromCharacterNode.Character.Id == child.Id
-                            && c.Type == ConnectionType.CloseFamily
-                            && c.Label is ("mother" or "father")
-                            && c.ToCharacterNode.Character.Id != character.Id)
+            var coParent = _graph.From(child.Id).Parents(excludeCharacterId: character.Id)
+                .All
                 .Select(c => c.ToCharacterNode.Character)
                 .FirstOrDefault();
 
             if (coParent is null) continue;
 
-            // Skip if already connected as partners.
-            bool alreadyPartners = character.LifeConnections.All
-                .Any(c => c.FromCharacterNode.Character.Id == character.Id
-                          && c.ToCharacterNode.Character.Id == coParent.Id
-                          && c.Label is not null && c.Label.EndsWith("partner"));
+            bool alreadyPartners = _graph.From(character.Id).Partners()
+                .All
+                .Any(c => c.ToCharacterNode.Character.Id == coParent.Id);
 
             if (alreadyPartners) continue;
 
-            // Wire a mutual romantic connection between the co-parents.
-            character.LifeConnections.Add(new Connection
-            {
-                FromCharacterNode = new ConnectionNode { Character = character },
-                ToCharacterNode = new ConnectionNode { Character = coParent },
-                Type = ConnectionType.Romantic,
-                Label = "romantic partner",
-                Strength = ConnectionStrengthPartner
-            });
-            coParent.LifeConnections.Add(new Connection
-            {
-                FromCharacterNode = new ConnectionNode { Character = coParent },
-                ToCharacterNode = new ConnectionNode { Character = character },
-                Type = ConnectionType.Romantic,
-                Label = "romantic partner",
-                Strength = ConnectionStrengthPartner
-            });
+            AddMutualPartnerConnection(character, coParent, label: "romantic partner",
+                                       isRomantic: true);
         }
     }
 
     /// <summary>
     /// Generates family members and links them to <paramref name="character"/>.
     ///
-    /// Singleton roles (mother, father) are skipped when already wired as
-    /// outbound connections — this prevents duplicates and contradictions with
-    /// reverse connections added during the child's own generation pass.
+    /// Singleton roles (mother, father) are skipped when already wired as outbound
+    /// connections, preventing contradictions with reverse connections added during
+    /// a child's own generation pass.
     ///
-    /// Child roles (son, daughter) have a low probability to be added to the optional
-    /// extras when the character already has existing child connections. If a parent 
-    /// was created as part of someone else's family, their children are already 
-    /// represented by that originating character and their siblings; additional 
-    /// generated children are disconnected parallel families (half-siblings in the graph).
+    /// After each sibling is created, <see cref="WireSiblingToParents"/> propagates
+    /// the originating character's parent edges to that sibling so they share the
+    /// same parents in the graph when later dequeued.
     /// </summary>
     private void GenerateFamily(Character character)
     {
@@ -648,35 +598,32 @@ public sealed class CharacterRandomizer
 
         // Collect family roles already wired as outbound connections.
         var filledRoles = new HashSet<string>(
-            character.LifeConnections.All
-                .Where(c => c.FromCharacterNode.Character.Id == character.Id
-                            && c.Type.IsFamily
-                            && c.Label is not null)
+            _graph.From(character.Id).Family().All
+                .Where(c => c.Label is not null)
                 .Select(c => c.Label!),
             StringComparer.OrdinalIgnoreCase);
 
-        // Mandatory singleton roles — add only when not already filled.
         var roles = new List<string>();
         if (!filledRoles.Contains("mother")) roles.Add("mother");
         if (!filledRoles.Contains("father")) roles.Add("father");
 
-        // Child roles are probabalistic when the character already has children:
-        // those were generated alongside the originating child character.
         var extras = new List<string>(SiblingRoles);
-        bool hasExistingChildren = filledRoles.Contains("son") || filledRoles.Contains("daughter");
+        bool hasExistingChildren =
+            filledRoles.Contains("son") || filledRoles.Contains("daughter");
+
         if (age >= MinAgeForChildren && !hasExistingChildren)
         {
             extras.AddRange(ChildRoles);
             while (_rng.NextDouble() < AdditionalFamilyChance)
                 roles.Add(extras[_rng.Next(extras.Count)]);
         }
-        else if(age >= MinAgeForChildren && hasExistingChildren && _rng.NextDouble() < ParallelChildrenChance)
+        else if (age >= MinAgeForChildren && hasExistingChildren
+                 && _rng.NextDouble() < ParallelChildrenChance)
         {
             while (_rng.NextDouble() < AdditionalFamilyChance)
                 roles.Add(extras[_rng.Next(extras.Count)]);
             roles.Add(ChildRoles[_rng.Next(ChildRoles.Count)]);
         }
-
 
         foreach (var role in roles)
         {
@@ -690,7 +637,6 @@ public sealed class CharacterRandomizer
 
             bool relIsMale = role is "father" or "brother" or "son";
             var namePool = relIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
-
             bool shareLastName =
                 role is "father" or "brother" ||
                 (role == "son" && gender == "Male") ||
@@ -703,15 +649,6 @@ public sealed class CharacterRandomizer
                 age: relAge,
                 isAlive: alive);
 
-            character.LifeConnections.Add(new Connection
-            {
-                FromCharacterNode = new ConnectionNode { Character = character },
-                ToCharacterNode = new ConnectionNode { Character = relative },
-                Type = ConnectionType.CloseFamily,
-                Label = role,
-                Strength = ConnectionStrengthFamily
-            });
-
             string reverseRole = role switch
             {
                 "father" or "mother" => gender == "Male" ? "son" : "daughter",
@@ -720,20 +657,67 @@ public sealed class CharacterRandomizer
                 _ => string.Empty
             };
 
-            relative.LifeConnections.Add(new Connection
+            AddFamilyConnection(character, relative, role, reverseRole);
+
+            // ── Sibling–parent wiring fix ─────────────────────────────────────
+            // Blood siblings share the same parents. Copy the originating
+            // character's parent edges (mother/father) to the new sibling so
+            // that when the sibling is later dequeued it does not generate a
+            // second, unrelated set of parents.
+            if (role is "brother" or "sister")
+                WireSiblingToParents(character, relative, relIsMale);
+        }
+    }
+
+    /// <summary>
+    /// Propagates <paramref name="originator"/>'s outbound parent edges
+    /// (mother / father) to <paramref name="sibling"/> and writes the
+    /// corresponding reciprocal child edges from each parent back to the sibling.
+    ///
+    /// This ensures blood siblings share exactly the same parent nodes in the graph.
+    /// The sibling's gender is used to pick the correct reverse label (son/daughter).
+    /// </summary>
+    private void WireSiblingToParents(Character originator, Character sibling, bool siblingIsMale)
+    {
+        var parentConns = _graph.From(originator.Id).Parents().All;
+
+        foreach (var parentConn in parentConns)
+        {
+            var parent = parentConn.ToCharacterNode.Character;
+
+            // Skip if the sibling is already connected to this parent.
+            bool alreadyLinked = _graph.From(sibling.Id).Parents().All
+                .Any(c => c.ToCharacterNode.Character.Id == parent.Id);
+            if (alreadyLinked) continue;
+
+            string parentRole = parentConn.Label!;                 // "mother" or "father"
+            string siblingRole = siblingIsMale ? "son" : "daughter"; // parent → sibling
+
+            // sibling → parent
+            _graph.Add(new Connection
             {
-                FromCharacterNode = new ConnectionNode { Character = relative },
-                ToCharacterNode = new ConnectionNode { Character = character },
+                FromCharacterNode = new ConnectionNode { Character = sibling },
+                ToCharacterNode = new ConnectionNode { Character = parent },
                 Type = ConnectionType.CloseFamily,
-                Label = reverseRole,
+                Label = parentRole,
+                Strength = ConnectionStrengthFamily
+            });
+
+            // parent → sibling
+            _graph.Add(new Connection
+            {
+                FromCharacterNode = new ConnectionNode { Character = parent },
+                ToCharacterNode = new ConnectionNode { Character = sibling },
+                Type = ConnectionType.CloseFamily,
+                Label = siblingRole,
                 Strength = ConnectionStrengthFamily
             });
         }
     }
 
     /// <summary>
-    /// Generates acquaintances as minimal <see cref="Character"/> objects and
-    /// links them via <see cref="ConnectionType.Acquaintance"/>.
+    /// Generates acquaintances as minimal characters and links them via
+    /// <see cref="ConnectionType.Acquaintance"/> in both directions.
     /// </summary>
     private void GenerateAcquaintances(Character character)
     {
@@ -754,14 +738,14 @@ public sealed class CharacterRandomizer
                 age: relAge,
                 isAlive: true);
 
-            character.LifeConnections.Add(new Connection
+            _graph.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = character },
                 ToCharacterNode = new ConnectionNode { Character = acquaintance },
                 Type = ConnectionType.Acquaintance,
                 Strength = ConnectionStrengthAcquaintance
             });
-            acquaintance.LifeConnections.Add(new Connection
+            _graph.Add(new Connection
             {
                 FromCharacterNode = new ConnectionNode { Character = acquaintance },
                 ToCharacterNode = new ConnectionNode { Character = character },
@@ -772,15 +756,12 @@ public sealed class CharacterRandomizer
     }
 
     /// <summary>
-    /// Generates partners as minimal <see cref="Character"/> objects and links
-    /// them via <see cref="ConnectionType.Romantic"/> (romantic) or
-    /// <see cref="ConnectionType.Friend"/> (platonic), labelled
-    /// "romantic partner" or "platonic partner".
+    /// Generates partners as minimal characters and links them via
+    /// <see cref="ConnectionType.Romantic"/> or <see cref="ConnectionType.Friend"/>,
+    /// labelled "romantic partner" or "platonic partner".
     ///
-    /// Only applies from <see cref="AgeCategory.YoungAdult"/> upward.
     /// Existing partners (e.g. a co-parent wired by <see cref="LinkCoParentsAsPartners"/>)
-    /// count toward the age-appropriate maximum, so the total never exceeds
-    /// <see cref="MaxPartnersYoungAge"/> / <see cref="MaxPartnersAdultAge"/>.
+    /// count toward the age-appropriate maximum.
     /// </summary>
     private void GeneratePartners(Character character)
     {
@@ -789,18 +770,15 @@ public sealed class CharacterRandomizer
         var orientation = character.Appearance.SexualOrientation.Value;
 
         if (AgeCategory.FromAge(age).IsMinor) return;
-        if (orientation == SexualOrientation.Asexual && _rng.NextDouble() >= AsexualPartnerChance) return;
+        if (orientation == SexualOrientation.Asexual
+            && _rng.NextDouble() >= AsexualPartnerChance) return;
 
-        // Respect existing partners created during co-parent linking.
-        int existingPartners = character.LifeConnections.All
-            .Count(c => c.FromCharacterNode.Character.Id == character.Id
-                        && c.Label is not null && c.Label.EndsWith("partner"));
+        int existingPartners = _graph.From(character.Id).Partners().Count;
 
         int maxCount = age < PartnerCountYoungAgeThreshold
             ? MaxPartnersYoungAge
             : MaxPartnersAdultAge;
         maxCount = Math.Max(0, maxCount - existingPartners);
-
         if (maxCount == 0) return;
 
         int count = _rng.Next(0, maxCount + 1);
@@ -825,25 +803,11 @@ public sealed class CharacterRandomizer
                 partnerIsMale ? BiologicalGender.Male : BiologicalGender.Female,
                 first: Pick(namePool),
                 last: Pick(NamePool.LastNames),
-                age: Math.Max(MinPartnerAge, age + _rng.Next(PartnerAgeDeltaMin, PartnerAgeDeltaMax + 1)),
+                age: Math.Max(MinPartnerAge,
+                             age + _rng.Next(PartnerAgeDeltaMin, PartnerAgeDeltaMax + 1)),
                 isAlive: true);
 
-            character.LifeConnections.Add(new Connection
-            {
-                FromCharacterNode = new ConnectionNode { Character = character },
-                ToCharacterNode = new ConnectionNode { Character = partner },
-                Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
-                Label = label,
-                Strength = ConnectionStrengthPartner
-            });
-            partner.LifeConnections.Add(new Connection
-            {
-                FromCharacterNode = new ConnectionNode { Character = partner },
-                ToCharacterNode = new ConnectionNode { Character = character },
-                Type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend,
-                Label = label,
-                Strength = ConnectionStrengthPartner
-            });
+            AddMutualPartnerConnection(character, partner, label, isRomantic);
         }
     }
 
@@ -857,8 +821,7 @@ public sealed class CharacterRandomizer
     {
         var category = AgeCategory.FromAge(age);
 
-        if (category == AgeCategory.Child)
-            return null;
+        if (category == AgeCategory.Child) return null;
 
         if (category == AgeCategory.Teen)
             return _rng.NextDouble() < TeenWorkChance
@@ -870,21 +833,65 @@ public sealed class CharacterRandomizer
                 ? Pick(WorkPool.ByAgeGroup[AgeCategory.Senior.Name])
                 : "retired";
 
-        // YoungAdult, Adult, MiddleAged — always employed.
         return Pick(WorkPool.ByAgeGroup[category.Name]);
+    }
+
+    // ── Connection helpers ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Adds a directed CloseFamily edge from <paramref name="character"/> to
+    /// <paramref name="relative"/> and the reciprocal edge in the opposite direction.
+    /// </summary>
+    private void AddFamilyConnection(
+        Character character, Character relative,
+        string role, string reverseRole)
+    {
+        _graph.Add(new Connection
+        {
+            FromCharacterNode = new ConnectionNode { Character = character },
+            ToCharacterNode = new ConnectionNode { Character = relative },
+            Type = ConnectionType.CloseFamily,
+            Label = role,
+            Strength = ConnectionStrengthFamily
+        });
+        _graph.Add(new Connection
+        {
+            FromCharacterNode = new ConnectionNode { Character = relative },
+            ToCharacterNode = new ConnectionNode { Character = character },
+            Type = ConnectionType.CloseFamily,
+            Label = reverseRole,
+            Strength = ConnectionStrengthFamily
+        });
+    }
+
+    /// <summary>
+    /// Adds mutual partner edges between <paramref name="a"/> and <paramref name="b"/>.
+    /// </summary>
+    private void AddMutualPartnerConnection(
+        Character a, Character b, string label, bool isRomantic)
+    {
+        var type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend;
+
+        _graph.Add(new Connection
+        {
+            FromCharacterNode = new ConnectionNode { Character = a },
+            ToCharacterNode = new ConnectionNode { Character = b },
+            Type = type,
+            Label = label,
+            Strength = ConnectionStrengthPartner
+        });
+        _graph.Add(new Connection
+        {
+            FromCharacterNode = new ConnectionNode { Character = b },
+            ToCharacterNode = new ConnectionNode { Character = a },
+            Type = type,
+            Label = label,
+            Strength = ConnectionStrengthPartner
+        });
     }
 
     // ── Minimal character factory ─────────────────────────────────────────────
 
-    /// <summary>
-    /// Creates a <see cref="Character"/> populated with the minimum fields
-    /// needed to represent a social connection: gender, name, age, alive-status.
-    ///
-    /// Orientation, physique, birthday, features, clothing, additional
-    /// connections, and occupation are intentionally left at their defaults;
-    /// they will be filled in by <see cref="CompleteCharacter"/> if and when
-    /// this character is dequeued.
-    /// </summary>
     private static Character CreateMinimalCharacter(
         BiologicalGender gender,
         string first, string last,

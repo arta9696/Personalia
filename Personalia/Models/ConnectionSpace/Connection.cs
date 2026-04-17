@@ -27,7 +27,7 @@ public sealed class Connection
 
     /// <summary>
     /// Optional human-readable label that refines the relationship type
-    /// beyond what <see cref="ConnectionType"/> captures.
+    /// beyond what <see cref="ConnectionType"/> DisplayName captures.
     /// Examples: "mother", "father", "romantic partner", "platonic partner".
     /// </summary>
     public string? Label { get; set; }
@@ -61,91 +61,131 @@ public sealed class ConnectionNode
 }
 
 /// <summary>
-/// Жизненные Связи — the directed multigraph of a character's relationships.
+/// ConnectionGraph — the global directed multigraph of all character relationships.
 ///
-/// Represents: a directed multigraph where nodes are characters and edges are
-/// typed, weighted connections. Multiple parallel edges between the same pair
-/// of nodes are allowed (e.g. someone can be both a colleague AND a friend).
+/// Replaces the per-character <c>LifeConnections</c> with a single shared graph so
+/// that the connection set is the single source of truth and cross-character queries
+/// require no cross-referencing of local lists.
 ///
-/// All filter methods (<see cref="From"/>, <see cref="To"/>, <see cref="OfType"/>,
-/// <see cref="Between"/>) return a new <see cref="LifeConnections"/> so that
-/// results can be further filtered or passed as a unit. Use the <see cref="All"/>
-/// property when raw list access is required. Use <see cref="Union(LifeConnections,LifeConnections)"/>
-/// to merge two graphs into a single deduplicated graph.
+/// All filter methods return a new <see cref="ConnectionGraph"/> projected view so
+/// results can be further narrowed or composed. The source graph is never mutated
+/// by filtering.
 /// </summary>
-public sealed class LifeConnections
+public sealed class ConnectionGraph
 {
+    public Guid Id { get; } = Guid.NewGuid();
     private readonly List<Connection> _connections = [];
 
     // ── Core ──────────────────────────────────────────────────────────────────
 
-    /// <summary>All connections in this graph as an ordered read-only list.</summary>
+    /// <summary>All connections in the graph as an ordered read-only list.</summary>
     public IReadOnlyList<Connection> All => _connections;
 
-    /// <summary>Number of connections currently in this graph.</summary>
+    /// <summary>Total number of connections in the graph.</summary>
     public int Count => _connections.Count;
 
-    /// <summary>Add a new connection to the graph.</summary>
+    /// <summary>Adds a connection. Returns <c>false</c> (no-op) if the ID already exists.</summary>
     public bool Add(Connection connection)
     {
-        if (_connections.Any(c => c.Id == connection.Id))
-            return false;
+        if (_connections.Any(c => c.Id == connection.Id)) return false;
         _connections.Add(connection);
         return true;
     }
 
-    /// <summary>Remove a connection by its ID. Returns <c>true</c> if found and removed.</summary>
+    /// <summary>Removes a connection by ID. Returns <c>true</c> if found and removed.</summary>
     public bool Remove(Guid connectionId)
     {
         var target = _connections.FirstOrDefault(c => c.Id == connectionId);
         return target is not null && _connections.Remove(target);
     }
 
-    // ── Composable filters — each returns a new LifeConnections ──────────────
+    // ── General filters ───────────────────────────────────────────────────────
+
+    /// <summary>All connections originating from <paramref name="characterId"/>.</summary>
+    public ConnectionGraph From(Guid characterId)
+        => Filter(c => c.FromCharacterNode.Character.Id == characterId);
+
+    /// <summary>All connections pointing to <paramref name="characterId"/>.</summary>
+    public ConnectionGraph To(Guid characterId)
+        => Filter(c => c.ToCharacterNode.Character.Id == characterId);
+
+    /// <summary>All connections whose type matches any element of <paramref name="types"/>.</summary>
+    public ConnectionGraph OfType(params ConnectionType[] types)
+        => Filter(c => types.Contains(c.Type));
 
     /// <summary>
-    /// Returns a new graph containing only connections where the FROM node
-    /// belongs to <paramref name="characterId"/>.
-    /// </summary>
-    public LifeConnections From(Guid characterId) =>
-        Filter(c => c.FromCharacterNode.Character.Id == characterId);
-
-    /// <summary>
-    /// Returns a new graph containing only connections where the TO node
-    /// belongs to <paramref name="characterId"/>.
-    /// </summary>
-    public LifeConnections To(Guid characterId) =>
-        Filter(c => c.ToCharacterNode.Character.Id == characterId);
-
-    /// <summary>
-    /// Returns a new graph containing only connections of the given
-    /// <paramref name="type"/>.
-    /// </summary>
-    public LifeConnections OfType(params ConnectionType[] types) =>
-        Filter(c => types.Contains(c.Type));
-
-    /// <summary>
-    /// Returns a new graph containing all connections between
-    /// <paramref name="characterA"/> and <paramref name="characterB"/>
+    /// All connections between <paramref name="a"/> and <paramref name="b"/>
     /// in either direction.
     /// </summary>
-    public LifeConnections Between(Guid characterA, Guid characterB) =>
-        Filter(c =>
-            (c.FromCharacterNode.Character.Id == characterA &&
-             c.ToCharacterNode.Character.Id == characterB) ||
-            (c.FromCharacterNode.Character.Id == characterB &&
-             c.ToCharacterNode.Character.Id == characterA));
+    public ConnectionGraph Between(Guid a, Guid b)
+        => Filter(c =>
+            (c.FromCharacterNode.Character.Id == a && c.ToCharacterNode.Character.Id == b) ||
+            (c.FromCharacterNode.Character.Id == b && c.ToCharacterNode.Character.Id == a));
+
+    // ── Semantic filters ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// All family connections
+    /// (<see cref="ConnectionType.CloseFamily"/> or <see cref="ConnectionType.Family"/>).
+    /// </summary>
+    public ConnectionGraph Family()
+        => Filter(c => c.Type.IsFamily);
+
+    /// <summary>All non-family connections.</summary>
+    public ConnectionGraph NonFamily()
+        => Filter(c => !c.Type.IsFamily);
+
+    /// <summary>
+    /// All partner connections — those whose <see cref="Connection.Label"/> ends with
+    /// <c>"partner"</c> (e.g. "romantic partner", "platonic partner").
+    /// </summary>
+    public ConnectionGraph Partners()
+        => Filter(c => c.Label?.EndsWith("partner", StringComparison.OrdinalIgnoreCase) == true);
+
+    /// <summary>
+    /// <see cref="ConnectionType.CloseFamily"/> connections whose label is
+    /// <c>"son"</c> or <c>"daughter"</c>.
+    /// Combine with <c>From(parentId)</c> to find a character's children.
+    /// </summary>
+    public ConnectionGraph Children()
+        => Filter(c => c.Type == ConnectionType.CloseFamily && c.Label is "son" or "daughter");
+
+    /// <summary>
+    /// <see cref="ConnectionType.CloseFamily"/> connections whose label is
+    /// <c>"mother"</c> or <c>"father"</c>, optionally excluding a specific destination.
+    /// Combine with <c>From(childId)</c> to find a character's parents.
+    /// </summary>
+    /// <param name="excludeCharacterId">
+    /// When provided, connections pointing to this character are omitted —
+    /// useful for finding co-parents while excluding the querying character itself.
+    /// </param>
+    public ConnectionGraph Parents(Guid? excludeCharacterId = null)
+        => Filter(c =>
+            c.Type == ConnectionType.CloseFamily &&
+            c.Label is "mother" or "father" &&
+            (excludeCharacterId is null || c.ToCharacterNode.Character.Id != excludeCharacterId));
+
+    /// <summary>All connections whose destination character is currently alive.</summary>
+    public ConnectionGraph Alive()
+        => Filter(c => c.ToCharacterNode.Character.IsAlive);
+
+    /// <summary>
+    /// All connections whose <see cref="Connection.Label"/> exactly matches
+    /// any of the supplied <paramref name="labels"/> (case-insensitive).
+    /// </summary>
+    public ConnectionGraph WithLabel(params string[] labels)
+        => Filter(c => c.Label is not null &&
+                       labels.Contains(c.Label, StringComparer.OrdinalIgnoreCase));
 
     // ── Set operations ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns a new <see cref="LifeConnections"/> containing every connection
-    /// from <paramref name="a"/> and <paramref name="b"/>, deduplicated by
-    /// connection <see cref="Connection.Id"/>.
+    /// Returns a new graph containing every connection from <paramref name="a"/>
+    /// and <paramref name="b"/>, deduplicated by connection ID.
     /// </summary>
-    public static LifeConnections Union(LifeConnections a, LifeConnections b)
+    public static ConnectionGraph Union(ConnectionGraph a, ConnectionGraph b)
     {
-        var result = new LifeConnections();
+        var result = new ConnectionGraph();
         var seen = new HashSet<Guid>();
         foreach (var conn in a._connections.Concat(b._connections))
             if (seen.Add(conn.Id))
@@ -153,21 +193,16 @@ public sealed class LifeConnections
         return result;
     }
 
-    /// <summary>
-    /// Returns a new <see cref="LifeConnections"/> containing every connection
-    /// from this graph and <paramref name="other"/>, deduplicated by
-    /// connection <see cref="Connection.Id"/>.
-    /// </summary>
-    public LifeConnections Union(LifeConnections other) => Union(this, other);
+    /// <inheritdoc cref="Union(ConnectionGraph,ConnectionGraph)"/>
+    public ConnectionGraph Union(ConnectionGraph other) => Union(this, other);
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    private LifeConnections Filter(Func<Connection, bool> predicate)
+    private ConnectionGraph Filter(Func<Connection, bool> predicate)
     {
-        var result = new LifeConnections();
-        foreach (var c in _connections)
-            if (predicate(c))
-                result.Add(c);
+        var result = new ConnectionGraph();
+        foreach (var c in _connections.Where(predicate))
+            result.Add(c);
         return result;
     }
 }

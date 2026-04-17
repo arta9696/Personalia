@@ -1,39 +1,39 @@
 ﻿using Personalia.Models.AppearanceSpace;
+using Personalia.Models.AppearanceSpace.BodyParts;
 using Personalia.Models.ClothingSpace;
-using Personalia.Models.ConnectionSpace;
 using Personalia.Models.PersonalitySpace;
 
 namespace Personalia.Models;
 
 /// <summary>
-/// Character — the root aggregate of the Personlia domain.
+/// Character — the root aggregate of the Personalia domain.
 ///
-/// A character is composed of four orthogonal concerns:
+/// A character is composed of three orthogonal concerns:
 ///
-///   1. <see cref="Appearance"/>   — Внешность
+///   1. <see cref="Appearance"/>  — Внешность
 ///      Physical and identity attributes; some hidden, some visible.
 ///      Drives both the character's own behaviour and how others treat them.
 ///
-///   2. <see cref="Clothing"/>     — Одежда
+///   2. <see cref="Clothing"/>    — Одежда
 ///      Clothing items that cover body slots, providing protection and
 ///      optionally concealing appearance attributes from observers.
 ///
-///   3. <see cref="Personality"/>  — Характер
+///   3. <see cref="Personality"/> — Характер
 ///      Behavioural traits that govern the character's decisions.
 ///
-///   4. <see cref="LifeConnections"/> — Жизненные Связи
-///      A directed multigraph of relationships with other characters.
+/// Relationships with other characters are held in the shared
+/// <c>ConnectionGraph</c> rather than per-character lists, providing a single
+/// source of truth for the social graph.
 /// </summary>
 public sealed class Character
 {
     public Guid Id { get; } = Guid.NewGuid();
 
-    // ── The four pillars ──────────────────────────────────────────────────────
+    // ── The three pillars ─────────────────────────────────────────────────────
 
     public Appearance Appearance { get; } = new();
     public Clothing Clothing { get; } = new();
     public Personality Personality { get; } = new();
-    public LifeConnections LifeConnections { get; } = new();
 
     // ── Vital / social state ──────────────────────────────────────────────────
 
@@ -46,9 +46,9 @@ public sealed class Character
 
     /// <summary>
     /// Current occupation or workplace description.
-    /// <c>null</c>  — unemployed / too young to work.
-    /// <c>"retired"</c> — retired.
-    /// Any other string — workplace name / description (e.g. "tech startup").
+    /// <c>null</c>        — unemployed / too young to work.
+    /// <c>"retired"</c>   — retired.
+    /// Any other string   — workplace name / description (e.g. "tech startup").
     /// </summary>
     public string? Occupation { get; set; }
 
@@ -71,10 +71,8 @@ public sealed class Character
     }
 
     /// <summary>
-    /// Resolves which body slots are currently concealed —
-    /// combining explicit <see cref="Wardrobe"/> coverage with any
-    /// appearance-level hidden flags.
+    /// Resolves which body slots are currently concealed by worn clothing.
     /// </summary>
-    public ISet<AppearanceSpace.BodyParts.IBodyPart> GetConcealedSlots()
+    public ISet<IBodyPart> GetConcealedSlots()
         => Clothing.GetConcealedSlots();
 }
