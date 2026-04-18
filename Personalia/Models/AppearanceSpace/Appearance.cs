@@ -10,7 +10,7 @@ namespace Personalia.Models.AppearanceSpace;
 ///   • How the character behaves.
 ///   • How others behave toward the character.
 ///
-/// Each attribute carries an <see cref="IsHidden"/> flag representing
+/// Each attribute carries an <c>Hidden</c> flag representing
 /// whether it is currently concealed from outside observers
 /// (скрыто упоминанием / одеждой).
 /// </summary>

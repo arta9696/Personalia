@@ -47,29 +47,6 @@ public static class Lk
         public const string Working = "Describer.Working";
     }
 
-    // ── Age groups ────────────────────────────────────────────────────────────
-
-    public static class AgeGroup
-    {
-        public const string Child = "AgeGroup.Child";
-        public const string Teen = "AgeGroup.Teen";
-        public const string YoungAdult = "AgeGroup.YoungAdult";
-        public const string Adult = "AgeGroup.Adult";
-        public const string MiddleAged = "AgeGroup.MiddleAged";
-        public const string Senior = "AgeGroup.Senior";
-    }
-
-    // ── Sexual orientation ────────────────────────────────────────────────────
-
-    public static class Orientation
-    {
-        public const string Heterosexual = "Orientation.Heterosexual";
-        public const string Homosexual = "Orientation.Homosexual";
-        public const string Bisexual = "Orientation.Bisexual";
-        public const string Asexual = "Orientation.Asexual";
-        public const string Unknown = "Orientation.Unknown";
-    }
-
     // ── Height ────────────────────────────────────────────────────────────────
 
     public static class Height
@@ -96,13 +73,5 @@ public static class Lk
         public const string Muscular = "Build.Muscular";
         public const string Brawny = "Build.Brawny";
         public const string Average = "Build.Average";
-    }
-
-    // ── Gender ────────────────────────────────────────────────────────────────
-
-    public static class Gender
-    {
-        public const string Male = "Gender.Male";
-        public const string Female = "Gender.Female";
     }
 }

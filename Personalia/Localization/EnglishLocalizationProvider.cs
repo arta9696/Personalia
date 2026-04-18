@@ -7,8 +7,8 @@ namespace Personalia.Localization.En;
 ///
 /// SmartEnum value display names are derived automatically from PascalCase value names
 /// via regex splitting, so no explicit mapping is required when new enum values are added.
-/// Month names are the only exception: they are single-word values that must retain
-/// proper capitalisation in running prose, so they are listed explicitly.
+/// Some names are exception: they are values that must retain proper
+/// capitalisation or punctuation in running prose, so they are listed explicitly.
 /// </summary>
 public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
 {
@@ -42,21 +42,6 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
             [Lk.Describer.Retired] = "You're currently retired.",
             [Lk.Describer.Working] = "You're currently working at {0}.",
 
-            // ── Age groups ────────────────────────────────────────────────────
-            [Lk.AgeGroup.Child] = "child",
-            [Lk.AgeGroup.Teen] = "teenager",
-            [Lk.AgeGroup.YoungAdult] = "young adult",
-            [Lk.AgeGroup.Adult] = "adult",
-            [Lk.AgeGroup.MiddleAged] = "middle-aged",
-            [Lk.AgeGroup.Senior] = "elderly",
-
-            // ── Sexual orientation ────────────────────────────────────────────
-            [Lk.Orientation.Heterosexual] = "straight",
-            [Lk.Orientation.Homosexual] = "gay",
-            [Lk.Orientation.Bisexual] = "bisexual",
-            [Lk.Orientation.Asexual] = "asexual",
-            [Lk.Orientation.Unknown] = "unknown",
-
             // ── Height ────────────────────────────────────────────────────────
             [Lk.Height.VeryShort] = "very short",
             [Lk.Height.Short] = "short",
@@ -76,15 +61,11 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
             [Lk.Build.Muscular] = "muscular",
             [Lk.Build.Brawny] = "brawny",
             [Lk.Build.Average] = "average build",
-
-            // ── Gender ────────────────────────────────────────────────────────
-            [Lk.Gender.Male] = "male",
-            [Lk.Gender.Female] = "female",
         };
 
-    // Month names must retain proper capitalisation in running prose.
-    // Single-word PascalCase values are fully lower-cased by the fallback splitter,
-    // so months are listed here explicitly as an override.
+    // Some names must retain proper capitalisation or punctuation in running prose.
+    // Single-word PascalCase values are fully split and lower-cased by the fallback splitter,
+    // so this are listed here explicitly as an override.
     private static readonly IReadOnlyDictionary<string, string> _enumOverrides =
         new Dictionary<string, string>
         {
@@ -100,6 +81,11 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
             ["Month.October"] = "October",
             ["Month.November"] = "November",
             ["Month.December"] = "December",
+
+            ["AgeCategory.MiddleAged"] = "middle-aged",
+            ["AgeCategory.Senior"] = "elderly",
+            ["SexualOrientation.Heterosexual"] = "straight",
+            ["SexualOrientation.Homosexual"] = "gay",
         };
 
     // ── ILocalizationProvider ─────────────────────────────────────────────────
@@ -116,13 +102,10 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
     /// Month names are returned with proper capitalisation from the override table.
     /// No explicit mapping is needed when new enum values are added.
     /// </summary>
-    public string GetEnumValue(string typeName, string valueName)
-    {
-        if (_enumOverrides.TryGetValue($"{typeName}.{valueName}", out var overrideVal))
-            return overrideVal;
-
-        return CamelCaseSplitter().Replace(valueName, " ").ToLower();
-    }
+    public string GetEnumValue(string typeName, string valueName) 
+        => _enumOverrides.TryGetValue($"{typeName}.{valueName}", out var overrideVal) 
+        ? overrideVal 
+        : CamelCaseSplitter().Replace(valueName, " ").ToLower();
 
     [GeneratedRegex(@"(?<=[a-z])(?=[A-Z])")]
     private static partial Regex CamelCaseSplitter();

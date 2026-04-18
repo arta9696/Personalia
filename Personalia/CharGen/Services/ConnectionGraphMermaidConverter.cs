@@ -1,4 +1,6 @@
-﻿using Personalia.Models;
+﻿using Personalia.Localization;
+using Personalia.Localization.En;
+using Personalia.Models;
 using Personalia.Models.ConnectionSpace;
 using System.Text;
 
@@ -10,9 +12,11 @@ namespace Personalia.CharGen.Services;
 /// social network.
 ///
 /// Node format:  <c>FirstName LastName Age</c>
-/// Edge format:  directed arrow labelled with <see cref="Connection.Label"/>
-///               when set, or <see cref="ConnectionType.DisplayName"/> as
-///               a fallback when the label is absent.
+/// Edge format:  directed arrow labelled with the localised display text for
+///               <see cref="Connection.Label"/> when set, or the localised
+///               <see cref="Models.Enums.ConnectionType"/> name as a fallback.
+///               Both are resolved through <see cref="ILocalizationProvider"/>
+///               so the diagram respects the active locale.
 ///
 /// Usage:
 /// <code>
@@ -23,6 +27,16 @@ namespace Personalia.CharGen.Services;
 /// </summary>
 public sealed class ConnectionGraphMermaidConverter
 {
+    private readonly ILocalizationProvider _loc;
+
+    /// <param name="loc">
+    /// Localisation provider (defaults to <see cref="EnglishLocalizationProvider"/>).
+    /// </param>
+    public ConnectionGraphMermaidConverter(ILocalizationProvider? loc = null)
+    {
+        _loc = loc ?? new EnglishLocalizationProvider();
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -32,7 +46,7 @@ public sealed class ConnectionGraphMermaidConverter
     /// <list type="number">
     ///   <item>One node declaration per unique character in the graph.</item>
     ///   <item>One directed edge per <see cref="Connection"/>, labelled with
-    ///         the connection's <see cref="Connection.Label"/> or type display name.</item>
+    ///         the localised connection label or type name.</item>
     /// </list>
     /// </summary>
     /// <param name="graph">The shared connection graph to serialise.</param>
@@ -91,10 +105,11 @@ public sealed class ConnectionGraphMermaidConverter
 
     /// <summary>
     /// Writes one Mermaid directed edge per connection.
-    /// The edge label is the connection's <see cref="Connection.Label"/> when
-    /// available, or the <see cref="ConnectionType.DisplayName"/> otherwise.
+    /// The edge label is resolved through <see cref="ILocalizationProvider"/>:
+    /// <see cref="Connection.Label"/> when available, or the
+    /// <see cref="Models.Enums.ConnectionType"/> name otherwise.
     /// </summary>
-    private static void AppendEdges(
+    private void AppendEdges(
         StringBuilder sb,
         ConnectionGraph graph,
         Dictionary<Guid, string> nodeIds)
@@ -103,7 +118,7 @@ public sealed class ConnectionGraphMermaidConverter
         {
             string from = nodeIds[conn.FromCharacterNode.Character.Id];
             string to = nodeIds[conn.ToCharacterNode.Character.Id];
-            string label = EscapeLabel(conn.Label ?? conn.Type.DisplayName);
+            string label = EscapeLabel(LabelOrType(conn));
             sb.AppendLine($"    {from} -->|\"{label}\"| {to}");
         }
     }
@@ -118,6 +133,16 @@ public sealed class ConnectionGraphMermaidConverter
         var app = character.Appearance;
         return $"{app.FirstName.Value} {app.LastName.Value} {app.Age.Value}";
     }
+
+    /// <summary>
+    /// Returns the localised display string for a connection's role.
+    /// Uses the typed <see cref="Models.Enums.ConnectionLabel"/> when set;
+    /// falls back to the localised <see cref="Models.Enums.ConnectionType"/> name.
+    /// </summary>
+    private string LabelOrType(Connection conn)
+        => conn.Label is not null
+            ? _loc.GetEnumValue("ConnectionLabel", conn.Label.Name)
+            : _loc.GetEnumValue("ConnectionType", conn.Type.Name);
 
     /// <summary>
     /// Escapes double-quote characters inside a Mermaid label string so the

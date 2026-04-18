@@ -11,14 +11,15 @@ namespace Personalia.CharGen.Services;
 /// CharacterDescriber — formats a <see cref="Character"/> as a human-readable description.
 ///
 /// Reads social connections from the shared <see cref="ConnectionGraph"/> rather than
-/// from per-character lists. Locale-specific strings are resolved through
-/// <see cref="ILocalizationProvider"/>; the default locale is English.
+/// from per-character lists. All display strings — including connection labels and
+/// connection type names — are resolved through <see cref="ILocalizationProvider"/>
+/// so that no locale-specific text is embedded in the domain model.
+/// The default locale is English.
 /// </summary>
 public sealed class CharacterDescriber
 {
     private readonly ILocalizationProvider _loc;
 
-    /// <param name="graph">The shared connection graph for the current session.</param>
     /// <param name="loc">
     /// Localisation provider (defaults to <see cref="EnglishLocalizationProvider"/>).
     /// </param>
@@ -103,7 +104,7 @@ public sealed class CharacterDescriber
             ? string.Join(", ", familyConns.Select(c =>
             {
                 var rel = c.ToCharacterNode.Character;
-                string role = c.Label ?? c.Type.DisplayName;
+                string role = LabelOrType(c);
                 string alive = _loc.Get(rel.IsAlive ? Lk.Describer.Alive : Lk.Describer.Deceased);
                 return _loc.Format(Lk.Describer.FamilyEntry,
                     role, rel.GetDisplayName(privilegedObserver: true),
@@ -133,7 +134,7 @@ public sealed class CharacterDescriber
                 var rel = c.ToCharacterNode.Character;
                 return _loc.Format(Lk.Describer.PartnerEntry,
                     rel.GetDisplayName(privilegedObserver: true),
-                    c.Label, rel.Appearance.Age.Value);
+                    LabelOrType(c), rel.Appearance.Age.Value);
             }))
             : _loc.Get(Lk.Describer.None));
 
@@ -150,29 +151,38 @@ public sealed class CharacterDescriber
 
     // ── Label helpers ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the localised display string for a connection's role.
+    /// Uses the typed <see cref="ConnectionLabel"/> when set;
+    /// falls back to the localised <see cref="ConnectionType"/> name.
+    /// </summary>
+    private string LabelOrType(Connection c)
+        => c.Label is not null
+            ? _loc.GetEnumValue("ConnectionLabel", c.Label.Name)
+            : _loc.GetEnumValue("ConnectionType", c.Type.Name);
+
     private string AgeGroupLabel(int age)
     {
         var cat = AgeCategory.FromAge(age);
-        if (cat == AgeCategory.Child) return _loc.Get(Lk.AgeGroup.Child);
-        if (cat == AgeCategory.Teen) return _loc.Get(Lk.AgeGroup.Teen);
-        if (cat == AgeCategory.YoungAdult) return _loc.Get(Lk.AgeGroup.YoungAdult);
-        if (cat == AgeCategory.Adult) return _loc.Get(Lk.AgeGroup.Adult);
-        if (cat == AgeCategory.MiddleAged) return _loc.Get(Lk.AgeGroup.MiddleAged);
-        return _loc.Get(Lk.AgeGroup.Senior);
+        if (cat == AgeCategory.Child) return _loc.GetEnumValue("AgeCategory", AgeCategory.Child.Name);
+        if (cat == AgeCategory.Teen) return _loc.GetEnumValue("AgeCategory", AgeCategory.Teen.Name);
+        if (cat == AgeCategory.YoungAdult) return _loc.GetEnumValue("AgeCategory", AgeCategory.YoungAdult.Name);
+        if (cat == AgeCategory.Adult) return _loc.GetEnumValue("AgeCategory", AgeCategory.Adult.Name);
+        if (cat == AgeCategory.MiddleAged) return _loc.GetEnumValue("AgeCategory", AgeCategory.MiddleAged.Name);
+        return _loc.GetEnumValue("AgeCategory", AgeCategory.Senior.Name);
     }
 
     private string GenderLabel(BiologicalGender g)
         => g == BiologicalGender.Male
-            ? _loc.Get(Lk.Gender.Male)
-            : _loc.Get(Lk.Gender.Female);
+            ? _loc.GetEnumValue("BiologicalGender", BiologicalGender.Male.Name)
+            : _loc.GetEnumValue("BiologicalGender", BiologicalGender.Female.Name);
 
     private string OrientationLabel(SexualOrientation o)
     {
-        if (o == SexualOrientation.Heterosexual) return _loc.Get(Lk.Orientation.Heterosexual);
-        if (o == SexualOrientation.Homosexual) return _loc.Get(Lk.Orientation.Homosexual);
-        if (o == SexualOrientation.Bisexual) return _loc.Get(Lk.Orientation.Bisexual);
-        if (o == SexualOrientation.Asexual) return _loc.Get(Lk.Orientation.Asexual);
-        return _loc.Get(Lk.Orientation.Unknown);
+        if (o == SexualOrientation.Heterosexual) return _loc.GetEnumValue("SexualOrientation", SexualOrientation.Heterosexual.Name);
+        if (o == SexualOrientation.Homosexual) return _loc.GetEnumValue("SexualOrientation", SexualOrientation.Homosexual.Name);
+        if (o == SexualOrientation.Bisexual) return _loc.GetEnumValue("SexualOrientation", SexualOrientation.Bisexual.Name);
+        return _loc.GetEnumValue("SexualOrientation", SexualOrientation.Asexual.Name);
     }
 
     private string HeightLabel(float cm) => cm switch

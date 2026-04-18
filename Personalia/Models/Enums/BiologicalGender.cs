@@ -7,9 +7,9 @@ namespace Personalia.Models.Enums;
 /// </summary>
 public sealed class BiologicalGender : SmartEnum<BiologicalGender>
 {
-    public static readonly BiologicalGender Male = new(0, nameof(Male), "Мужчина");
-    public static readonly BiologicalGender Female = new(1, nameof(Female), "Женщина");
+    public static readonly BiologicalGender Male = new(0, nameof(Male));
+    public static readonly BiologicalGender Female = new(1, nameof(Female));
 
-    private BiologicalGender(int value, string name, string displayName)
-        : base(value, name, displayName) { }
+    private BiologicalGender(int value, string name)
+        : base(value, name) { }
 }

@@ -37,19 +37,14 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     /// <summary>Code-friendly identifier — matches the static field name.</summary>
     public string Name { get; }
 
-    /// <summary>Human-readable label, ready for localisation.</summary>
-    public string DisplayName { get; }
-
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    protected SmartEnum(int value, string name, string displayName)
+    protected SmartEnum(int value, string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
 
         Value = value;
         Name = name;
-        DisplayName = displayName;
 
         // Self-registration: runs at type-initialisation of the derived class.
         ByValue[value] = (TSelf)this;
@@ -101,7 +96,7 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     public bool Equals(SmartEnum<TSelf>? other) => other is not null && Value == other.Value;
     public override bool Equals(object? obj) => obj is SmartEnum<TSelf> other && Equals(other);
     public override int GetHashCode() => Value;
-    public override string ToString() => DisplayName;
+    public override string ToString() => Name;
 
     public static bool operator ==(SmartEnum<TSelf>? a, SmartEnum<TSelf>? b)
         => ReferenceEquals(a, b) || (a is not null && a.Equals(b));

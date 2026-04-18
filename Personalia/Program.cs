@@ -13,3 +13,5 @@ internal class Program
     }
 }
 
+// Place all string formating helpers in common formating class
+// Add optional Context parameter to localization for increasing translation quality (such as word endings in russian localization)

@@ -12,12 +12,12 @@ public sealed class ConnectionType : SmartEnum<ConnectionType>
 {
     // ── Registered instances ──────────────────────────────────────────────────
 
-    public static readonly ConnectionType CloseFamily = new(0, nameof(CloseFamily), "Близкородственные");   //Blood family
-    public static readonly ConnectionType Family = new(1, nameof(Family), "Родственные");                   //Legal family
-    public static readonly ConnectionType Acquaintance = new(2, nameof(Acquaintance), "Знакомые");
-    public static readonly ConnectionType Friend = new(3, nameof(Friend), "Друзья");
-    public static readonly ConnectionType Colleague = new(4, nameof(Colleague), "Коллеги");
-    public static readonly ConnectionType Romantic = new(5, nameof(Romantic), "Любовные");
+    public static readonly ConnectionType CloseFamily = new(0, nameof(CloseFamily));   //Blood family
+    public static readonly ConnectionType Family = new(1, nameof(Family));                   //Legal family
+    public static readonly ConnectionType Acquaintance = new(2, nameof(Acquaintance));
+    public static readonly ConnectionType Friend = new(3, nameof(Friend));
+    public static readonly ConnectionType Colleague = new(4, nameof(Colleague));
+    public static readonly ConnectionType Romantic = new(5, nameof(Romantic));
 
     // ── Behaviour flags ───────────────────────────────────────────────────────
 
@@ -32,8 +32,8 @@ public sealed class ConnectionType : SmartEnum<ConnectionType>
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    private ConnectionType(int value, string name, string displayName)
-        : base(value, name, displayName)
+    private ConnectionType(int value, string name)
+        : base(value, name)
     {
     }
 }

@@ -2,10 +2,6 @@
 
 /// <summary>
 /// RussianLocalizationProvider — Cyrillic locale for <c>CharacterDescriber</c> output.
-///
-/// All SmartEnum display names mirror the <c>DisplayName</c> values defined in the
-/// domain-model enum classes, centralised here so the domain model remains independent
-/// of the localisation layer.
 /// </summary>
 public sealed class RussianLocalizationProvider : ILocalizationProvider
 {
@@ -39,21 +35,6 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             [Lk.Describer.Retired] = "В данный момент вы на пенсии.",
             [Lk.Describer.Working] = "В данный момент вы работаете в {0}.",
 
-            // ── Age groups ────────────────────────────────────────────────────
-            [Lk.AgeGroup.Child] = "ребёнок",
-            [Lk.AgeGroup.Teen] = "подросток",
-            [Lk.AgeGroup.YoungAdult] = "молодой человек",
-            [Lk.AgeGroup.Adult] = "взрослый",
-            [Lk.AgeGroup.MiddleAged] = "среднего возраста",
-            [Lk.AgeGroup.Senior] = "пожилой человек",
-
-            // ── Sexual orientation ────────────────────────────────────────────
-            [Lk.Orientation.Heterosexual] = "гетеросексуальный",
-            [Lk.Orientation.Homosexual] = "гомосексуальный",
-            [Lk.Orientation.Bisexual] = "бисексуальный",
-            [Lk.Orientation.Asexual] = "асексуальный",
-            [Lk.Orientation.Unknown] = "неизвестно",
-
             // ── Height ────────────────────────────────────────────────────────
             [Lk.Height.VeryShort] = "очень низкий",
             [Lk.Height.Short] = "низкий",
@@ -64,24 +45,38 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             [Lk.Height.VeryTall] = "очень высокий",
 
             // ── Build ─────────────────────────────────────────────────────────
-            [Lk.Build.Skinny] = "худощавый",
-            [Lk.Build.Thin] = "стройный",
-            [Lk.Build.Plump] = "пухлый",
-            [Lk.Build.Lean] = "поджарый",
-            [Lk.Build.Stocky] = "коренастый",
-            [Lk.Build.Ripped] = "рельефный",
-            [Lk.Build.Muscular] = "мускулистый",
-            [Lk.Build.Brawny] = "мощный",
-            [Lk.Build.Average] = "среднего телосложения",
-
-            // ── Gender ────────────────────────────────────────────────────────
-            [Lk.Gender.Male] = "мужчина",
-            [Lk.Gender.Female] = "женщина",
+            [Lk.Build.Skinny] = "худощавое",
+            [Lk.Build.Thin] = "стройное",
+            [Lk.Build.Plump] = "пухлое",
+            [Lk.Build.Lean] = "поджарое",
+            [Lk.Build.Stocky] = "коренастое",
+            [Lk.Build.Ripped] = "рельефное",
+            [Lk.Build.Muscular] = "мускулистое",
+            [Lk.Build.Brawny] = "мощное",
+            [Lk.Build.Average] = "среднего телосложеное",
         };
 
     private static readonly IReadOnlyDictionary<string, string> _enumValues =
         new Dictionary<string, string>
         {
+            // ── Age groups ────────────────────────────────────────────────────
+            ["AgeCategory.Child"] = "ребёнок",
+            ["AgeCategory.Teen"] = "подросток",
+            ["AgeCategory.YoungAdult"] = "молодой человек",
+            ["AgeCategory.Adult"] = "взрослый",
+            ["AgeCategory.MiddleAged"] = "среднего возраста",
+            ["AgeCategory.Senior"] = "пожилой человек",
+
+            // ── Sexual orientation ────────────────────────────────────────────
+            ["SexualOrientation.Heterosexual"] = "гетеросексуальны",
+            ["SexualOrientation.Homosexual"] = "гомосексуальны",
+            ["SexualOrientation.Bisexual"] = "бисексуальны",
+            ["SexualOrientation.Asexual"] = "асексуальны",
+
+            // ── Gender ────────────────────────────────────────────────────────
+            ["BiologicalGender.Male"] = "мужчина",
+            ["BiologicalGender.Female"] = "женщина",
+
             // ── HairColor ─────────────────────────────────────────────────────
             ["HairColor.Black"] = "чёрные",
             ["HairColor.DarkBrown"] = "тёмно-каштановые",
@@ -148,7 +143,7 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             // ── Month ─────────────────────────────────────────────────────────
             ["Month.January"] = "январь",
             ["Month.February"] = "февраль",
-            ["Month.March"] = "марть",
+            ["Month.March"] = "март",
             ["Month.April"] = "апрель",
             ["Month.May"] = "май",
             ["Month.June"] = "июнь",
@@ -158,6 +153,24 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["Month.October"] = "октябрь",
             ["Month.November"] = "ноябрь",
             ["Month.December"] = "декабрь",
+
+            // ── ConnectionLabel ───────────────────────────────────────────────
+            ["ConnectionLabel.Mother"] = "мать",
+            ["ConnectionLabel.Father"] = "отец",
+            ["ConnectionLabel.Son"] = "сын",
+            ["ConnectionLabel.Daughter"] = "дочь",
+            ["ConnectionLabel.Brother"] = "брат",
+            ["ConnectionLabel.Sister"] = "сестра",
+            ["ConnectionLabel.RomanticPartner"] = "любовник",
+            ["ConnectionLabel.PlatonicPartner"] = "близкий друг",
+
+            // ── ConnectionType ────────────────────────────────────────────────
+            ["ConnectionType.CloseFamily"] = "близкородственная",
+            ["ConnectionType.Family"] = "родственная",
+            ["ConnectionType.Acquaintance"] = "знакомая",
+            ["ConnectionType.Friend"] = "дружественная",
+            ["ConnectionType.Colleague"] = "рабочая",
+            ["ConnectionType.Romantic"] = "романтическая",
         };
 
     // ── ILocalizationProvider ─────────────────────────────────────────────────

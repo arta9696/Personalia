@@ -11,12 +11,12 @@ public sealed class AgeCategory : SmartEnum<AgeCategory>
 {
     // ── Registered instances ──────────────────────────────────────────────────
 
-    public static readonly AgeCategory Child = new(0, nameof(Child), "Ребёнок", 0, 12);
-    public static readonly AgeCategory Teen = new(1, nameof(Teen), "Подросток", 13, 17);
-    public static readonly AgeCategory YoungAdult = new(2, nameof(YoungAdult), "Молодой взрослый", 18, 25);
-    public static readonly AgeCategory Adult = new(3, nameof(Adult), "Взрослый", 26, 45);
-    public static readonly AgeCategory MiddleAged = new(4, nameof(MiddleAged), "Средний возраст", 46, 64);
-    public static readonly AgeCategory Senior = new(5, nameof(Senior), "Пожилой", 65, 100);
+    public static readonly AgeCategory Child = new(0, nameof(Child), 0, 12);
+    public static readonly AgeCategory Teen = new(1, nameof(Teen), 13, 17);
+    public static readonly AgeCategory YoungAdult = new(2, nameof(YoungAdult), 18, 25);
+    public static readonly AgeCategory Adult = new(3, nameof(Adult), 26, 45);
+    public static readonly AgeCategory MiddleAged = new(4, nameof(MiddleAged), 46, 64);
+    public static readonly AgeCategory Senior = new(5, nameof(Senior), 65, 100);
 
     // ── Properties ────────────────────────────────────────────────────────────
 
@@ -30,8 +30,8 @@ public sealed class AgeCategory : SmartEnum<AgeCategory>
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    private AgeCategory(int value, string name, string displayName, int minAge, int maxAge)
-        : base(value, name, displayName)
+    private AgeCategory(int value, string name, int minAge, int maxAge)
+        : base(value, name)
     {
         MinAge = minAge;
         MaxAge = maxAge;

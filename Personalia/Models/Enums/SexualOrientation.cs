@@ -7,11 +7,11 @@ namespace Personalia.Models.Enums;
 /// </summary>
 public sealed class SexualOrientation : SmartEnum<SexualOrientation>
 {
-    public static readonly SexualOrientation Heterosexual = new(0, nameof(Heterosexual), "Гетеросексуальная");
-    public static readonly SexualOrientation Homosexual = new(1, nameof(Homosexual), "Гомосексуальная");
-    public static readonly SexualOrientation Bisexual = new(2, nameof(Bisexual), "Бисексуальная");
-    public static readonly SexualOrientation Asexual = new(3, nameof(Asexual), "Асексуальная");
+    public static readonly SexualOrientation Heterosexual = new(0, nameof(Heterosexual));
+    public static readonly SexualOrientation Homosexual = new(1, nameof(Homosexual));
+    public static readonly SexualOrientation Bisexual = new(2, nameof(Bisexual));
+    public static readonly SexualOrientation Asexual = new(3, nameof(Asexual));
 
-    private SexualOrientation(int value, string name, string displayName)
-        : base(value, name, displayName) { }
+    private SexualOrientation(int value, string name)
+        : base(value, name) { }
 }

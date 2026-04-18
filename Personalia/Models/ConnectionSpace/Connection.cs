@@ -26,11 +26,14 @@ public sealed class Connection
     public ConnectionType Type { get; set; } = ConnectionType.Acquaintance;
 
     /// <summary>
-    /// Optional human-readable label that refines the relationship type
-    /// beyond what <see cref="ConnectionType"/> DisplayName captures.
-    /// Examples: "mother", "father", "romantic partner", "platonic partner".
+    /// Optional typed label that refines the relationship role beyond what
+    /// <see cref="ConnectionType"/> captures. Display text is resolved through
+    /// <see cref="Localization.ILocalizationProvider"/> at the
+    /// presentation layer; the label itself carries no locale-specific strings.
+    /// Examples: <see cref="ConnectionLabel.Mother"/>,
+    ///           <see cref="ConnectionLabel.RomanticPartner"/>.
     /// </summary>
-    public string? Label { get; set; }
+    public ConnectionLabel? Label { get; set; }
 
     /// <summary>
     /// Strength of the connection (0.0 = non-existent, 1.0 = strongest).
@@ -136,23 +139,28 @@ public sealed class ConnectionGraph
         => Filter(c => !c.Type.IsFamily);
 
     /// <summary>
-    /// All partner connections — those whose <see cref="Connection.Label"/> ends with
-    /// <c>"partner"</c> (e.g. "romantic partner", "platonic partner").
+    /// All partner connections — those whose <see cref="Connection.Label"/> has
+    /// <see cref="ConnectionLabel.IsPartner"/> set to <c>true</c>
+    /// (e.g. <see cref="ConnectionLabel.RomanticPartner"/>,
+    ///       <see cref="ConnectionLabel.PlatonicPartner"/>).
     /// </summary>
     public ConnectionGraph Partners()
-        => Filter(c => c.Label?.EndsWith("partner", StringComparison.OrdinalIgnoreCase) == true);
+        => Filter(c => c.Label?.IsPartner == true);
 
     /// <summary>
-    /// <see cref="ConnectionType.CloseFamily"/> connections whose label is
-    /// <c>"son"</c> or <c>"daughter"</c>.
+    /// <see cref="ConnectionType.CloseFamily"/> connections whose label has
+    /// <see cref="ConnectionLabel.IsChild"/> set to <c>true</c>
+    /// (<see cref="ConnectionLabel.Son"/> or <see cref="ConnectionLabel.Daughter"/>).
     /// Combine with <c>From(parentId)</c> to find a character's children.
     /// </summary>
     public ConnectionGraph Children()
-        => Filter(c => c.Type == ConnectionType.CloseFamily && c.Label is "son" or "daughter");
+        => Filter(c => c.Type == ConnectionType.CloseFamily && c.Label?.IsChild == true);
 
     /// <summary>
-    /// <see cref="ConnectionType.CloseFamily"/> connections whose label is
-    /// <c>"mother"</c> or <c>"father"</c>, optionally excluding a specific destination.
+    /// <see cref="ConnectionType.CloseFamily"/> connections whose label has
+    /// <see cref="ConnectionLabel.IsParent"/> set to <c>true</c>
+    /// (<see cref="ConnectionLabel.Mother"/> or <see cref="ConnectionLabel.Father"/>),
+    /// optionally excluding a specific destination.
     /// Combine with <c>From(childId)</c> to find a character's parents.
     /// </summary>
     /// <param name="excludeCharacterId">
@@ -162,7 +170,7 @@ public sealed class ConnectionGraph
     public ConnectionGraph Parents(Guid? excludeCharacterId = null)
         => Filter(c =>
             c.Type == ConnectionType.CloseFamily &&
-            c.Label is "mother" or "father" &&
+            c.Label?.IsParent == true &&
             (excludeCharacterId is null || c.ToCharacterNode.Character.Id != excludeCharacterId));
 
     /// <summary>All connections whose destination character is currently alive.</summary>
@@ -170,12 +178,17 @@ public sealed class ConnectionGraph
         => Filter(c => c.ToCharacterNode.Character.IsAlive);
 
     /// <summary>
-    /// All connections whose <see cref="Connection.Label"/> exactly matches
-    /// any of the supplied <paramref name="labels"/> (case-insensitive).
+    /// All connections whose <see cref="Connection.Label"/> is not null.
     /// </summary>
-    public ConnectionGraph WithLabel(params string[] labels)
-        => Filter(c => c.Label is not null &&
-                       labels.Contains(c.Label, StringComparer.OrdinalIgnoreCase));
+    public ConnectionGraph WithLabel()
+        => Filter(c => c.Label is not null);
+
+    /// <summary>
+    /// All connections whose <see cref="Connection.Label"/> exactly matches any of
+    /// the supplied <paramref name="labels"/> (by SmartEnum value equality).
+    /// </summary>
+    public ConnectionGraph WithLabel(params ConnectionLabel[] labels)
+        => Filter(c => c.Label is not null && labels.Contains(c.Label));
 
     // ── Set operations ────────────────────────────────────────────────────────
 

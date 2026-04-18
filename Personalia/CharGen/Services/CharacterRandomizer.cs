@@ -29,8 +29,9 @@ namespace Personalia.CharGen.Services;
 /// Immediately after a sibling minimal character is created, <see cref="WireSiblingToParents"/>
 /// copies the originating character's parent edges (mother/father) to the new sibling,
 /// and writes the reciprocal child edges from the parents back to the sibling.
-/// When the sibling is later dequeued, <c>filledRoles</c> already contains "mother" and
-/// "father", so <see cref="GenerateFamily"/> skips generating new unrelated parents.
+/// When the sibling is later dequeued, <c>filledRoles</c> already contains
+/// <see cref="ConnectionLabel.Mother"/> and <see cref="ConnectionLabel.Father"/>,
+/// so <see cref="GenerateFamily"/> skips generating new unrelated parents.
 ///
 /// Queued-character completion
 /// ───────────────────────────
@@ -80,19 +81,22 @@ public sealed class CharacterRandomizer
     private const double ParallelChildrenChance = 0.05;
 
     /// <summary>Age-delta table for family roles: (minDelta, maxDelta) relative to character age.</summary>
-    private static readonly IReadOnlyDictionary<string, (int Min, int Max)> FamilyRoleAgeDeltas =
-        new Dictionary<string, (int, int)>
+    private static readonly IReadOnlyDictionary<ConnectionLabel, (int Min, int Max)> FamilyRoleAgeDeltas =
+        new Dictionary<ConnectionLabel, (int, int)>
         {
-            ["mother"] = (20, 35),
-            ["father"] = (20, 35),
-            ["brother"] = (-5, 5),
-            ["sister"] = (-5, 5),
-            ["son"] = (-35, -20),
-            ["daughter"] = (-35, -20)
+            [ConnectionLabel.Mother] = (20, 35),
+            [ConnectionLabel.Father] = (20, 35),
+            [ConnectionLabel.Brother] = (-5, 5),
+            [ConnectionLabel.Sister] = (-5, 5),
+            [ConnectionLabel.Son] = (-35, -20),
+            [ConnectionLabel.Daughter] = (-35, -20)
         };
 
-    private static readonly IReadOnlyList<string> SiblingRoles = ["brother", "sister"];
-    private static readonly IReadOnlyList<string> ChildRoles = ["son", "daughter"];
+    private static readonly IReadOnlyList<ConnectionLabel> SiblingRoles =
+        [ConnectionLabel.Brother, ConnectionLabel.Sister];
+
+    private static readonly IReadOnlyList<ConnectionLabel> ChildRoles =
+        [ConnectionLabel.Son, ConnectionLabel.Daughter];
 
     // ── Acquaintances ─────────────────────────────────────────────────────────
 
@@ -186,7 +190,7 @@ public sealed class CharacterRandomizer
     /// Every character ID that has already been enqueued or fully generated,
     /// preventing the same person from being processed twice.
     /// </summary>
-    private readonly HashSet<Guid> _processed = new();
+    private readonly HashSet<Guid> _processed = [];
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -574,8 +578,8 @@ public sealed class CharacterRandomizer
 
             if (alreadyPartners) continue;
 
-            AddMutualPartnerConnection(character, coParent, label: "romantic partner",
-                                       isRomantic: true);
+            AddMutualPartnerConnection(character, coParent,
+                label: ConnectionLabel.RomanticPartner, isRomantic: true);
         }
     }
 
@@ -593,23 +597,22 @@ public sealed class CharacterRandomizer
     private void GenerateFamily(Character character)
     {
         int age = character.Appearance.Age.Value;
-        string gender = character.Appearance.BiologicalGender.Value.Name;
+        var gender = character.Appearance.BiologicalGender.Value;
         string lastName = character.Appearance.LastName.Value;
 
         // Collect family roles already wired as outbound connections.
-        var filledRoles = new HashSet<string>(
-            _graph.From(character.Id).Family().All
-                .Where(c => c.Label is not null)
-                .Select(c => c.Label!),
-            StringComparer.OrdinalIgnoreCase);
+        var filledRoles = new HashSet<ConnectionLabel>(
+            _graph.From(character.Id).Family().WithLabel().All
+                .Select(c => c.Label!));
 
-        var roles = new List<string>();
-        if (!filledRoles.Contains("mother")) roles.Add("mother");
-        if (!filledRoles.Contains("father")) roles.Add("father");
+        var roles = new List<ConnectionLabel>();
+        if (!filledRoles.Contains(ConnectionLabel.Mother)) roles.Add(ConnectionLabel.Mother);
+        if (!filledRoles.Contains(ConnectionLabel.Father)) roles.Add(ConnectionLabel.Father);
 
-        var extras = new List<string>(SiblingRoles);
+        var extras = new List<ConnectionLabel>(SiblingRoles);
         bool hasExistingChildren =
-            filledRoles.Contains("son") || filledRoles.Contains("daughter");
+            filledRoles.Contains(ConnectionLabel.Son) ||
+            filledRoles.Contains(ConnectionLabel.Daughter);
 
         if (age >= MinAgeForChildren && !hasExistingChildren)
         {
@@ -632,15 +635,20 @@ public sealed class CharacterRandomizer
 
             bool alive = _rng.NextDouble() < RelativeAliveBaseChance;
             if (relAge > MaxAge) alive = false;
-            else if (alive && role is "mother" or "father" && age > ElderlyParentAgeThreshold)
+            else if (alive && role.IsParent && age > ElderlyParentAgeThreshold)
                 alive = _rng.NextDouble() < ElderlyParentAliveChance;
 
-            bool relIsMale = role is "father" or "brother" or "son";
+            bool relIsMale = role == ConnectionLabel.Father
+                          || role == ConnectionLabel.Brother
+                          || role == ConnectionLabel.Son;
+
             var namePool = relIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
+
             bool shareLastName =
-                role is "father" or "brother" ||
-                (role == "son" && gender == "Male") ||
-                (role == "daughter" && gender == "Female");
+                role == ConnectionLabel.Father ||
+                role == ConnectionLabel.Brother ||
+                (role == ConnectionLabel.Son && gender == BiologicalGender.Male) ||
+                (role == ConnectionLabel.Daughter && gender == BiologicalGender.Female);
 
             var relative = CreateMinimalCharacter(
                 relIsMale ? BiologicalGender.Male : BiologicalGender.Female,
@@ -649,13 +657,13 @@ public sealed class CharacterRandomizer
                 age: relAge,
                 isAlive: alive);
 
-            string reverseRole = role switch
-            {
-                "father" or "mother" => gender == "Male" ? "son" : "daughter",
-                "son" or "daughter" => gender == "Male" ? "father" : "mother",
-                "brother" or "sister" => gender == "Male" ? "brother" : "sister",
-                _ => string.Empty
-            };
+            ConnectionLabel reverseRole;
+            if (role.IsParent)
+                reverseRole = gender == BiologicalGender.Male ? ConnectionLabel.Son : ConnectionLabel.Daughter;
+            else if (role.IsChild)
+                reverseRole = gender == BiologicalGender.Male ? ConnectionLabel.Father : ConnectionLabel.Mother;
+            else
+                reverseRole = gender == BiologicalGender.Male ? ConnectionLabel.Brother : ConnectionLabel.Sister;
 
             AddFamilyConnection(character, relative, role, reverseRole);
 
@@ -664,7 +672,7 @@ public sealed class CharacterRandomizer
             // character's parent edges (mother/father) to the new sibling so
             // that when the sibling is later dequeued it does not generate a
             // second, unrelated set of parents.
-            if (role is "brother" or "sister")
+            if (role.IsSibling)
                 WireSiblingToParents(character, relative, relIsMale);
         }
     }
@@ -690,8 +698,8 @@ public sealed class CharacterRandomizer
                 .Any(c => c.ToCharacterNode.Character.Id == parent.Id);
             if (alreadyLinked) continue;
 
-            string parentRole = parentConn.Label!;                 // "mother" or "father"
-            string siblingRole = siblingIsMale ? "son" : "daughter"; // parent → sibling
+            ConnectionLabel parentRole = parentConn.Label!;  // Mother or Father
+            ConnectionLabel siblingRole = siblingIsMale ? ConnectionLabel.Son : ConnectionLabel.Daughter;
 
             // sibling → parent
             _graph.Add(new Connection
@@ -758,7 +766,8 @@ public sealed class CharacterRandomizer
     /// <summary>
     /// Generates partners as minimal characters and links them via
     /// <see cref="ConnectionType.Romantic"/> or <see cref="ConnectionType.Friend"/>,
-    /// labelled "romantic partner" or "platonic partner".
+    /// labelled <see cref="ConnectionLabel.RomanticPartner"/> or
+    /// <see cref="ConnectionLabel.PlatonicPartner"/>.
     ///
     /// Existing partners (e.g. a co-parent wired by <see cref="LinkCoParentsAsPartners"/>)
     /// count toward the age-appropriate maximum.
@@ -766,7 +775,7 @@ public sealed class CharacterRandomizer
     private void GeneratePartners(Character character)
     {
         int age = character.Appearance.Age.Value;
-        string gender = character.Appearance.BiologicalGender.Value.Name;
+        var gender = character.Appearance.BiologicalGender.Value;
         var orientation = character.Appearance.SexualOrientation.Value;
 
         if (AgeCategory.FromAge(age).IsMinor) return;
@@ -785,26 +794,26 @@ public sealed class CharacterRandomizer
 
         for (int i = 0; i < count; i++)
         {
-            string partnerGender = orientation switch
+            var partnerGender = orientation switch
             {
                 _ when orientation == SexualOrientation.Heterosexual
-                    => gender == "Male" ? "Female" : "Male",
+                    => gender == BiologicalGender.Male ? BiologicalGender.Female : BiologicalGender.Male,
                 _ when orientation == SexualOrientation.Homosexual
                     => gender,
-                _ => _rng.Next(2) == 0 ? "Male" : "Female"
+                _ => _rng.Next(2) == 0 ? BiologicalGender.Male : BiologicalGender.Female
             };
 
-            bool partnerIsMale = partnerGender == "Male";
+            bool partnerIsMale = partnerGender == BiologicalGender.Male;
             var namePool = partnerIsMale ? NamePool.MaleFirstNames : NamePool.FemaleFirstNames;
             bool isRomantic = _rng.NextDouble() < RomanticPartnerChance;
-            string label = isRomantic ? "romantic partner" : "platonic partner";
+            var label = isRomantic ? ConnectionLabel.RomanticPartner : ConnectionLabel.PlatonicPartner;
 
             var partner = CreateMinimalCharacter(
                 partnerIsMale ? BiologicalGender.Male : BiologicalGender.Female,
                 first: Pick(namePool),
                 last: Pick(NamePool.LastNames),
                 age: Math.Max(MinPartnerAge,
-                             age + _rng.Next(PartnerAgeDeltaMin, PartnerAgeDeltaMax + 1)),
+                                  age + _rng.Next(PartnerAgeDeltaMin, PartnerAgeDeltaMax + 1)),
                 isAlive: true);
 
             AddMutualPartnerConnection(character, partner, label, isRomantic);
@@ -844,7 +853,7 @@ public sealed class CharacterRandomizer
     /// </summary>
     private void AddFamilyConnection(
         Character character, Character relative,
-        string role, string reverseRole)
+        ConnectionLabel role, ConnectionLabel reverseRole)
     {
         _graph.Add(new Connection
         {
@@ -868,7 +877,7 @@ public sealed class CharacterRandomizer
     /// Adds mutual partner edges between <paramref name="a"/> and <paramref name="b"/>.
     /// </summary>
     private void AddMutualPartnerConnection(
-        Character a, Character b, string label, bool isRomantic)
+        Character a, Character b, ConnectionLabel label, bool isRomantic)
     {
         var type = isRomantic ? ConnectionType.Romantic : ConnectionType.Friend;
 
