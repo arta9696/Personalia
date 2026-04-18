@@ -1,5 +1,6 @@
 ﻿using Personalia.CharGen.Services;
 using Personalia.Localization;
+using Personalia.Models;
 using Personalia.Models.ConnectionSpace;
 
 namespace Personalia.CharGen;
@@ -13,9 +14,25 @@ namespace Personalia.CharGen;
 /// <see cref="CharacterDescriber"/> (which reads from it). This means the
 /// describer always sees the fully up-to-date social graph for every character.
 /// </summary>
-public static class CharGenExample
+public class CharGenExample
 {
     private const string Separator = "====================";
+    private const string OutputFile = "characters.txt";
+
+    public CharGenExample()
+    {
+    }
+
+    public CharGenExample(int seed)
+    {
+        Seed = seed;
+    }
+
+    public int? Seed { get; init; } = null;
+    public ConnectionGraph Graph { get; } = new ConnectionGraph();
+    public List<Character> Characters { get; } = [];
+
+
 
     /// <param name="count">Number of characters to generate (default: 50).</param>
     /// <param name="outputFile">Output file path (default: "characters.txt").</param>
@@ -25,23 +42,20 @@ public static class CharGenExample
     /// Pass a <c>RussianLocalizationProvider</c> for Cyrillic output, or supply
     /// any custom <see cref="ILocalizationProvider"/> implementation.
     /// </param>
-    public static void Run(
+    public void Run(
         int count = 50,
-        string outputFile = "characters.txt",
-        int? seed = null,
         ILocalizationProvider? loc = null)
     {
-        var graph = new ConnectionGraph();
-        var generator = new CharacterRandomizer(graph, seed);
+        var generator = new CharacterRandomizer(Graph, Seed);
         var describer = new CharacterDescriber(loc);
 
         using var writer = new StreamWriter(
-            outputFile, append: false, encoding: System.Text.Encoding.UTF8);
+            OutputFile, append: false, encoding: System.Text.Encoding.UTF8);
 
         for (int i = 0; i < count; i++)
         {
             var character = generator.Generate();
-            var description = describer.Describe(character, graph);
+            var description = describer.Describe(character, Graph);
 
             Console.WriteLine(Separator);
             Console.WriteLine(description);
@@ -52,6 +66,6 @@ public static class CharGenExample
             writer.WriteLine(Separator);
         }
 
-        Console.WriteLine($"Done. {count} characters written to '{outputFile}'.");
+        Console.WriteLine($"Done. {count} characters written to '{OutputFile}'.");
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Personalia.CharGen;
+using Personalia.CharGen.Services;
 using Personalia.Localization.Ru;
 
 namespace Personalia;
@@ -7,8 +8,8 @@ internal class Program
 {
     static void Main(string[] args)
     {
-        CharGenExample.Run();
+        CharGenExample charGen = new CharGenExample(2106170426);
+        charGen.Run(loc: new RussianLocalizationProvider());
     }
 }
 
-// write a connections graph to mermaid converter to visualise graph. As nodes text use 'Name Lastname Age'. On connection lines write connection label.
