@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using Personalia.Common;
+using System.Text.RegularExpressions;
 
 namespace Personalia.Localization.En;
 
@@ -7,8 +8,12 @@ namespace Personalia.Localization.En;
 ///
 /// SmartEnum value display names are derived automatically from PascalCase value names
 /// via regex splitting, so no explicit mapping is required when new enum values are added.
-/// Some names are exception: they are values that must retain proper
+/// Some names are exceptions: they are values that must retain proper
 /// capitalisation or punctuation in running prose, so they are listed explicitly.
+///
+/// Grammatical context (<see cref="LocalizationContext"/>) is accepted by all methods
+/// but intentionally ignored — English adjectives and nouns do not inflect for gender
+/// or number in the patterns this provider handles.
 /// </summary>
 public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
 {
@@ -16,56 +21,58 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
         new Dictionary<string, string>
         {
             // ── Describer ─────────────────────────────────────────────────────
-            [Lk.Describer.Header]
+            ["Describer.Header"]
                 = "Your name is {0} {1}. You are {2} years old. Your birthday is {3} {4}.",
-            [Lk.Describer.SectionAppearance] = "Appearance",
-            [Lk.Describer.AppearanceLine1]
+            ["Describer.SectionAppearance"] = "Appearance",
+            ["Describer.AppearanceLine1"]
                 = "You are {0} {1}. You are {2}. You have {3} height and your build would best be described as {4}. ",
-            [Lk.Describer.AppearanceLine2]
+            ["Describer.AppearanceLine2"]
                 = "You have {0} skin, {1} {2} eyes and your {3} hair is {4}.",
-            [Lk.Describer.DistinctiveFeature] = "Your most distinguishing feature is {0}.",
-            [Lk.Describer.DistinctiveFeatures] = "Your most distinguishing features are {0}.",
-            [Lk.Describer.SectionClothing] = "Clothing",
-            [Lk.Describer.ClothingBase] = "You are wearing {0}, {1} and {2}.",
-            [Lk.Describer.ClothingAccessories] = " You also have {0}.",
-            [Lk.Describer.SectionStatus] = "Status",
-            [Lk.Describer.FamilyPrefix] = "Your family: ",
-            [Lk.Describer.AcquaintancePrefix] = "Your acquaintances: ",
-            [Lk.Describer.PartnerPrefix] = "Your partners: ",
-            [Lk.Describer.None] = "None",
-            [Lk.Describer.FamilyEntry] = "{0} named {1} (age {2}, {3})",
-            [Lk.Describer.AcquaintanceEntry] = "{0} (age {1})",
-            [Lk.Describer.PartnerEntry] = "{0} ({1}, age {2})",
-            [Lk.Describer.Alive] = "alive",
-            [Lk.Describer.Deceased] = "deceased",
-            [Lk.Describer.Unemployed] = "You're currently unemployed.",
-            [Lk.Describer.Retired] = "You're currently retired.",
-            [Lk.Describer.Working] = "You're currently working at {0}.",
+            ["Describer.DistinctiveFeature"] = "Your most distinguishing feature is {0}.",
+            ["Describer.DistinctiveFeatures"] = "Your most distinguishing features are {0}.",
+            ["Describer.SectionClothing"] = "Clothing",
+            ["Describer.ClothingBase"] = "You are wearing {0}, {1} and {2}.",
+            ["Describer.ClothingAccessories"] = " You also have {0}.",
+            ["Describer.SectionStatus"] = "Status",
+            ["Describer.FamilyPrefix"] = "Your family: ",
+            ["Describer.AcquaintancePrefix"] = "Your acquaintances: ",
+            ["Describer.PartnerPrefix"] = "Your partners: ",
+            ["Describer.None"] = "None",
+            ["Describer.FamilyEntry"] = "{0} named {1} (age {2}, {3})",
+            ["Describer.AcquaintanceEntry"] = "{0} (age {1})",
+            ["Describer.PartnerEntry"] = "{0} ({1}, age {2})",
+            ["Describer.Alive"] = "alive",
+            ["Describer.Deceased"] = "deceased",
+            ["Describer.Unemployed"] = "You're currently unemployed.",
+            ["Describer.Retired"] = "You're currently retired.",
+            ["Describer.Working"] = "You're currently working at {0}.",
 
             // ── Height ────────────────────────────────────────────────────────
-            [Lk.Height.VeryShort] = "very short",
-            [Lk.Height.Short] = "short",
-            [Lk.Height.SlightlyShort] = "slightly short",
-            [Lk.Height.Average] = "average",
-            [Lk.Height.SlightlyTall] = "slightly tall",
-            [Lk.Height.Tall] = "tall",
-            [Lk.Height.VeryTall] = "very tall",
+            ["Height.VeryShort"] = "very short",
+            ["Height.Short"] = "short",
+            ["Height.SlightlyShort"] = "slightly short",
+            ["Height.Average"] = "average",
+            ["Height.SlightlyTall"] = "slightly tall",
+            ["Height.Tall"] = "tall",
+            ["Height.VeryTall"] = "very tall",
 
             // ── Build ─────────────────────────────────────────────────────────
-            [Lk.Build.Skinny] = "skinny",
-            [Lk.Build.Thin] = "thin",
-            [Lk.Build.Plump] = "plump",
-            [Lk.Build.Lean] = "lean",
-            [Lk.Build.Stocky] = "stocky",
-            [Lk.Build.Ripped] = "ripped",
-            [Lk.Build.Muscular] = "muscular",
-            [Lk.Build.Brawny] = "brawny",
-            [Lk.Build.Average] = "average build",
+            ["Build.Skinny"] = "skinny",
+            ["Build.Thin"] = "thin",
+            ["Build.Plump"] = "plump",
+            ["Build.Lean"] = "lean",
+            ["Build.Stocky"] = "stocky",
+            ["Build.Ripped"] = "ripped",
+            ["Build.Muscular"] = "muscular",
+            ["Build.Brawny"] = "brawny",
+            ["Build.Average"] = "average build",
         };
 
-    // Some names must retain proper capitalisation or punctuation in running prose.
-    // Single-word PascalCase values are fully split and lower-cased by the fallback splitter,
-    // so this are listed here explicitly as an override.
+    /// <summary>
+    /// Some names must retain proper capitalisation or punctuation in running prose.
+    /// Single-word PascalCase values are fully split and lower-cased by the fallback splitter,
+    /// so these are listed here explicitly as overrides.
+    /// </summary>
     private static readonly IReadOnlyDictionary<string, string> _enumOverrides =
         new Dictionary<string, string>
         {
@@ -90,23 +97,34 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
 
     // ── ILocalizationProvider ─────────────────────────────────────────────────
 
-    public string Get(string key)
+    /// <inheritdoc/>
+    /// <remarks>Context is accepted for interface compliance but not used — English
+    /// adjectives do not inflect for grammatical gender in these patterns.</remarks>
+    public string Get(string key, LocalizationContext? context = null)
         => _strings.TryGetValue(key, out var val) ? val : key;
 
-    public string Format(string key, params object?[] args)
+    /// <inheritdoc/>
+    public string Format(string key, LocalizationContext? context, params string[] args)
+        => string.Format(Get(key, context), args);
+
+    /// <inheritdoc/>
+    public string Format(string key, params string[] args)
         => string.Format(Get(key), args);
 
     /// <summary>
     /// Converts a PascalCase SmartEnum value name to a lowercase spaced phrase.
     /// Examples: "DarkBrown" → "dark brown", "CloseCropped" → "close cropped".
-    /// Month names are returned with proper capitalisation from the override table.
+    /// Some names are returned with proper capitalisation or punctuation from the override table.
     /// No explicit mapping is needed when new enum values are added.
+    /// Context is accepted for interface compliance but not used in English.
     /// </summary>
-    public string GetEnumValue(string typeName, string valueName) 
-        => _enumOverrides.TryGetValue($"{typeName}.{valueName}", out var overrideVal) 
-        ? overrideVal 
-        : CamelCaseSplitter().Replace(valueName, " ").ToLower();
+    public string GetEnumValue(string typeName, string valueName, LocalizationContext? context = null)
+        => _enumOverrides.TryGetValue($"{typeName}.{valueName}", out var overrideVal)
+            ? overrideVal
+            : TextFormatter.CamelCaseSplitter().Replace(valueName, " ").ToLower();
 
-    [GeneratedRegex(@"(?<=[a-z])(?=[A-Z])")]
-    private static partial Regex CamelCaseSplitter();
+    /// <summary>
+    /// TODO
+    /// </summary>
+    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T> => GetEnumValue(value.GetType().Name, value.Name, context);
 }

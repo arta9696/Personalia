@@ -39,6 +39,9 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     protected SmartEnum(int value, string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -79,12 +82,18 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
                 $"No {typeof(TSelf).Name} with name '{name}'.");
     }
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public static bool TryFromValue(int value, out TSelf? result)
     {
         Initialise();
         return ByValue.TryGetValue(value, out result);
     }
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public static bool TryFromName(string name, out TSelf? result)
     {
         Initialise();
@@ -93,14 +102,36 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
 
     // ── Equality ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// TODO
+    /// </summary>
+    /// <param name="other"></param>
     public bool Equals(SmartEnum<TSelf>? other) => other is not null && Value == other.Value;
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public override bool Equals(object? obj) => obj is SmartEnum<TSelf> other && Equals(other);
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public override int GetHashCode() => Value;
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public override string ToString() => Name;
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public static bool operator ==(SmartEnum<TSelf>? a, SmartEnum<TSelf>? b)
         => ReferenceEquals(a, b) || (a is not null && a.Equals(b));
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public static bool operator !=(SmartEnum<TSelf>? a, SmartEnum<TSelf>? b)
         => !(a == b);
 

@@ -1,7 +1,19 @@
-﻿namespace Personalia.Localization.Ru;
+﻿using Personalia.Common;
+
+namespace Personalia.Localization.Ru;
 
 /// <summary>
 /// RussianLocalizationProvider — Cyrillic locale for <c>CharacterDescriber</c> output.
+///
+/// Grammatical context (<see cref="LocalizationContext"/>) is used to resolve
+/// gender-inflected variants of adjectives and nouns.  When a
+/// <see cref="LocalizationContext"/> is present, the provider first looks for
+/// a context-specific dictionary entry using the key-suffix convention
+/// <c>"{TypeName}.{ValueName}.{Context}"</c>
+/// (e.g. <c>"AgeCategory.Adult.Female"</c>), then falls back to the base key.
+///
+/// This allows Russian adjectives to agree with the subject's grammatical gender
+/// without changing the template structure or adding extra format parameters.
 /// </summary>
 public sealed class RussianLocalizationProvider : ILocalizationProvider
 {
@@ -9,65 +21,75 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
         new Dictionary<string, string>
         {
             // ── Describer ─────────────────────────────────────────────────────
-            [Lk.Describer.Header]
+            ["Describer.Header"]
                 = "Ваше имя {0} {1}. Вам {2} лет. День рождения: {3} {4}.",
-            [Lk.Describer.SectionAppearance] = "Внешность",
-            [Lk.Describer.AppearanceLine1]
+            ["Describer.Header.Singular"]
+                = "Ваше имя {0} {1}. Вам {2} год. День рождения: {3} {4}.",
+            ["Describer.Header.Dual"]
+                = "Ваше имя {0} {1}. Вам {2} года. День рождения: {3} {4}.",
+            ["Describer.SectionAppearance"] = "Внешность",
+            ["Describer.AppearanceLine1"]
                 = "Вы {0} {1}. Вы {2}. У вас {3} рост, а телосложение лучше всего можно описать как {4}. ",
-            [Lk.Describer.AppearanceLine2]
+            ["Describer.AppearanceLine2"]
                 = "У вас {0} кожа, {1} {2} глаза, а ваши {3} волосы {4}.",
-            [Lk.Describer.DistinctiveFeature] = "Ваша наиболее выделяющаяся черта — {0}.",
-            [Lk.Describer.DistinctiveFeatures] = "Ваши наиболее выделяющиеся черты — {0}.",
-            [Lk.Describer.SectionClothing] = "Одежда",
-            [Lk.Describer.ClothingBase] = "Вы одеты в {0}, {1} и {2}.",
-            [Lk.Describer.ClothingAccessories] = " Также у вас есть {0}.",
-            [Lk.Describer.SectionStatus] = "Статус",
-            [Lk.Describer.FamilyPrefix] = "Ваша семья: ",
-            [Lk.Describer.AcquaintancePrefix] = "Ваши знакомые: ",
-            [Lk.Describer.PartnerPrefix] = "Ваши партнёры: ",
-            [Lk.Describer.None] = "Нет",
-            [Lk.Describer.FamilyEntry] = "{0} по имени {1} (возраст {2}, {3})",
-            [Lk.Describer.AcquaintanceEntry] = "{0} (возраст {1})",
-            [Lk.Describer.PartnerEntry] = "{0} ({1}, возраст {2})",
-            [Lk.Describer.Alive] = "живой",
-            [Lk.Describer.Deceased] = "умерший",
-            [Lk.Describer.Unemployed] = "В данный момент вы без работы.",
-            [Lk.Describer.Retired] = "В данный момент вы на пенсии.",
-            [Lk.Describer.Working] = "В данный момент вы работаете в {0}.",
+            ["Describer.DistinctiveFeature"] = "Ваша наиболее выделяющаяся черта — {0}.",
+            ["Describer.DistinctiveFeatures"] = "Ваши наиболее выделяющиеся черты — {0}.",
+            ["Describer.SectionClothing"] = "Одежда",
+            ["Describer.ClothingBase"] = "Вы одеты в {0}, {1} и {2}.",
+            ["Describer.ClothingAccessories"] = " Также у вас есть {0}.",
+            ["Describer.SectionStatus"] = "Статус",
+            ["Describer.FamilyPrefix"] = "Ваша семья: ",
+            ["Describer.AcquaintancePrefix"] = "Ваши знакомые: ",
+            ["Describer.PartnerPrefix"] = "Ваши партнёры: ",
+            ["Describer.None"] = "Нет",
+            ["Describer.FamilyEntry"] = "{0} по имени {1} (возраст {2}, {3})",
+            ["Describer.AcquaintanceEntry"] = "{0} (возраст {1})",
+            ["Describer.PartnerEntry"] = "{0} ({1}, возраст {2})",
+            ["Describer.Alive"] = "живой",
+            ["Describer.Alive.Female"] = "живая",
+            ["Describer.Deceased"] = "мертв",
+            ["Describer.Deceased.Female"] = "мертва",
+            ["Describer.Unemployed"] = "В данный момент у Вас нет работы.",
+            ["Describer.Retired"] = "В данный момент вы на пенсии.",
+            ["Describer.Working"] = "В данный момент вы работаете в {0}.",
 
-            // ── Height ────────────────────────────────────────────────────────
-            [Lk.Height.VeryShort] = "очень низкий",
-            [Lk.Height.Short] = "низкий",
-            [Lk.Height.SlightlyShort] = "чуть ниже среднего",
-            [Lk.Height.Average] = "средний",
-            [Lk.Height.SlightlyTall] = "чуть выше среднего",
-            [Lk.Height.Tall] = "высокий",
-            [Lk.Height.VeryTall] = "очень высокий",
+            // ── Height (agrees with "рост", masculine noun — no gender context needed) ─
+            ["Height.VeryShort"] = "очень низкий",
+            ["Height.Short"] = "низкий",
+            ["Height.SlightlyShort"] = "чуть ниже среднего",
+            ["Height.Average"] = "средний",
+            ["Height.SlightlyTall"] = "чуть выше среднего",
+            ["Height.Tall"] = "высокий",
+            ["Height.VeryTall"] = "очень высокий",
 
-            // ── Build ─────────────────────────────────────────────────────────
-            [Lk.Build.Skinny] = "худощавое",
-            [Lk.Build.Thin] = "стройное",
-            [Lk.Build.Plump] = "пухлое",
-            [Lk.Build.Lean] = "поджарое",
-            [Lk.Build.Stocky] = "коренастое",
-            [Lk.Build.Ripped] = "рельефное",
-            [Lk.Build.Muscular] = "мускулистое",
-            [Lk.Build.Brawny] = "мощное",
-            [Lk.Build.Average] = "среднего телосложеное",
+            // ── Build (agrees with "телосложение", neuter noun — no gender context needed) ─
+            ["Build.Skinny"] = "худощавое",
+            ["Build.Thin"] = "стройное",
+            ["Build.Plump"] = "пухлое",
+            ["Build.Lean"] = "поджарое",
+            ["Build.Stocky"] = "коренастое",
+            ["Build.Ripped"] = "рельефное",
+            ["Build.Muscular"] = "мускулистое",
+            ["Build.Brawny"] = "мощное",
+            ["Build.Average"] = "среднее телосложения",
         };
 
     private static readonly IReadOnlyDictionary<string, string> _enumValues =
         new Dictionary<string, string>
         {
-            // ── Age groups ────────────────────────────────────────────────────
-            ["AgeCategory.Child"] = "ребёнок",
-            ["AgeCategory.Teen"] = "подросток",
-            ["AgeCategory.YoungAdult"] = "молодой человек",
-            ["AgeCategory.Adult"] = "взрослый",
-            ["AgeCategory.MiddleAged"] = "среднего возраста",
-            ["AgeCategory.Senior"] = "пожилой человек",
+            // ── Age categories — base (masculine/neutral) + feminine overrides ─────────
+            // Used in "Вы {ageGroup} {gender}." so the adjective must agree with gender.
+            ["AgeCategory.Child"] = "ребёнок",       // gender-neutral noun
+            ["AgeCategory.Teen"] = "подросток",     // gender-neutral noun
+            ["AgeCategory.YoungAdult"] = "молодой",   // masculine
+            ["AgeCategory.YoungAdult.Female"] = "молодая",   // feminine override
+            ["AgeCategory.Adult"] = "взрослый",  // masculine
+            ["AgeCategory.Adult.Female"] = "взрослая", // feminine override
+            ["AgeCategory.MiddleAged"] = "среднего возраста", // invariant (genitive phrase)
+            ["AgeCategory.Senior"] = "пожилой",   // masculine
+            ["AgeCategory.Senior.Female"] = "пожилая",  // feminine override
 
-            // ── Sexual orientation ────────────────────────────────────────────
+            // ── Sexual orientation (short-form predicate, gender-invariant) ───────────
             ["SexualOrientation.Heterosexual"] = "гетеросексуальны",
             ["SexualOrientation.Homosexual"] = "гомосексуальны",
             ["SexualOrientation.Bisexual"] = "бисексуальны",
@@ -78,16 +100,16 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["BiologicalGender.Female"] = "женщина",
 
             // ── HairColor ─────────────────────────────────────────────────────
-            ["HairColor.Black"] = "чёрные",
-            ["HairColor.DarkBrown"] = "тёмно-каштановые",
-            ["HairColor.Brown"] = "каштановые",
-            ["HairColor.LightBrown"] = "светло-каштановые",
-            ["HairColor.Blonde"] = "светлые",
-            ["HairColor.Platinum"] = "платиновые",
-            ["HairColor.Red"] = "рыжие",
-            ["HairColor.Auburn"] = "медно-рыжие",
-            ["HairColor.Grey"] = "серые",
-            ["HairColor.White"] = "белые",
+            ["HairColor.Black"] = "чёрного цвета",
+            ["HairColor.DarkBrown"] = "тёмно-каштанового цвета",
+            ["HairColor.Brown"] = "каштанового цвета",
+            ["HairColor.LightBrown"] = "светло-каштанового цвета",
+            ["HairColor.Blonde"] = "светлого цвета",
+            ["HairColor.Platinum"] = "платинового цвета",
+            ["HairColor.Red"] = "рыжего цвета",
+            ["HairColor.Auburn"] = "медно-рыжего цвета",
+            ["HairColor.Grey"] = "серого цвета",
+            ["HairColor.White"] = "белого цвета",
             ["HairColor.Dyed"] = "крашеные",
 
             // ── HairLength ────────────────────────────────────────────────────
@@ -95,7 +117,7 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["HairLength.CloseCropped"] = "очень короткие",
             ["HairLength.Short"] = "короткие",
             ["HairLength.EarLength"] = "до ушей",
-            ["HairLength.Medium"] = "средние",
+            ["HairLength.Medium"] = "средней длины",
             ["HairLength.Long"] = "длинные",
             ["HairLength.WaistLength"] = "до талии",
 
@@ -162,7 +184,9 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["ConnectionLabel.Brother"] = "брат",
             ["ConnectionLabel.Sister"] = "сестра",
             ["ConnectionLabel.RomanticPartner"] = "любовник",
+            ["ConnectionLabel.RomanticPartner.Female"] = "любовница",
             ["ConnectionLabel.PlatonicPartner"] = "близкий друг",
+            ["ConnectionLabel.PlatonicPartner.Female"] = "близкая подруга",
 
             // ── ConnectionType ────────────────────────────────────────────────
             ["ConnectionType.CloseFamily"] = "близкородственная",
@@ -175,12 +199,56 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
 
     // ── ILocalizationProvider ─────────────────────────────────────────────────
 
-    public string Get(string key)
-        => _strings.TryGetValue(key, out var val) ? val : key;
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Context is accepted but currently not used for plain string keys —
+    /// the keys in use agree with their fixed governing nouns
+    /// (height → "рост" masculine; build → "телосложение" neuter).
+    /// The parameter is reserved for future context-sensitive string variants.
+    /// </remarks>
+    public string Get(string key, LocalizationContext? context = null)
+    {
+        if (context?.Context is { Length: > 0 } contextString)
+        {
+            var contextKey = $"{key}.{contextString}";
+            if (_strings.TryGetValue(contextKey, out var contextVal))
+                return contextVal;
+        }
 
-    public string Format(string key, params object?[] args)
+        return _strings.TryGetValue(key, out var val) ? val : key;
+    }
+
+    /// <inheritdoc/>
+    public string Format(string key, LocalizationContext? context, params string[] args)
+        => string.Format(Get(key, context), args);
+
+    /// <inheritdoc/>
+    public string Format(string key, params string[] args)
         => string.Format(Get(key), args);
 
-    public string GetEnumValue(string typeName, string valueName)
-        => _enumValues.TryGetValue($"{typeName}.{valueName}", out var val) ? val : valueName;
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Lookup order when <paramref name="context"/> carries a gender value:
+    /// <list type="number">
+    ///   <item><c>"{typeName}.{valueName}.{context.Gender}"</c> — context-specific variant.</item>
+    ///   <item><c>"{typeName}.{valueName}"</c>                  — base (gender-neutral or masculine default).</item>
+    ///   <item><paramref name="valueName"/> verbatim             — ultimate fallback.</item>
+    /// </list>
+    /// </remarks>
+    public string GetEnumValue(string typeName, string valueName, LocalizationContext? context = null)
+    {
+        if (context?.Context is { Length: > 0 } contextString)
+        {
+            var contextKey = $"{typeName}.{valueName}.{contextString}";
+            if (_enumValues.TryGetValue(contextKey, out var contextVal))
+                return contextVal;
+        }
+
+        return _enumValues.TryGetValue($"{typeName}.{valueName}", out var val) ? val : valueName;
+    }
+
+    /// <summary>
+    /// TODO
+    /// </summary>
+    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T> => GetEnumValue(value.GetType().Name, value.Name, context);
 }

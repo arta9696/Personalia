@@ -1,4 +1,5 @@
-﻿using Personalia.Localization;
+﻿using Personalia.Common;
+using Personalia.Localization;
 using Personalia.Localization.En;
 using Personalia.Models;
 using Personalia.Models.ConnectionSpace;
@@ -17,6 +18,8 @@ namespace Personalia.CharGen.Services;
 ///               <see cref="Models.Enums.ConnectionType"/> name as a fallback.
 ///               Both are resolved through <see cref="ILocalizationProvider"/>
 ///               so the diagram respects the active locale.
+///
+/// Label escaping is delegated to <see cref="TextFormatter.EscapeLabel"/>.
 ///
 /// Usage:
 /// <code>
@@ -98,7 +101,7 @@ public sealed class ConnectionGraphMermaidConverter
         foreach (var character in characters)
         {
             string nodeId = nodeIds[character.Id];
-            string label = EscapeLabel(NodeLabel(character));
+            string label = TextFormatter.EscapeLabel(NodeLabel(character));
             sb.AppendLine($"    {nodeId}[\"{label}\"]");
         }
     }
@@ -118,7 +121,7 @@ public sealed class ConnectionGraphMermaidConverter
         {
             string from = nodeIds[conn.FromCharacterNode.Character.Id];
             string to = nodeIds[conn.ToCharacterNode.Character.Id];
-            string label = EscapeLabel(LabelOrType(conn));
+            string label = TextFormatter.EscapeLabel(LabelOrType(conn));
             sb.AppendLine($"    {from} -->|\"{label}\"| {to}");
         }
     }
@@ -141,13 +144,6 @@ public sealed class ConnectionGraphMermaidConverter
     /// </summary>
     private string LabelOrType(Connection conn)
         => conn.Label is not null
-            ? _loc.GetEnumValue("ConnectionLabel", conn.Label.Name)
-            : _loc.GetEnumValue("ConnectionType", conn.Type.Name);
-
-    /// <summary>
-    /// Escapes double-quote characters inside a Mermaid label string so the
-    /// diagram does not break if a name or label happens to contain a quote.
-    /// </summary>
-    private static string EscapeLabel(string text)
-        => text.Replace("\"", "#quot;");
+            ? _loc.GetEnumValue(conn.Label)
+            : _loc.GetEnumValue(conn.Type);
 }

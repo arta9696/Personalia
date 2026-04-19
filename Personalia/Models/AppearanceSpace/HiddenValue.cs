@@ -19,6 +19,9 @@ public sealed class HiddenValue<T>
 
     // ── Construction ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public HiddenValue(T value, bool isHidden = false)
     {
         _value = value;
@@ -78,6 +81,7 @@ public sealed class HiddenValue<T>
     public T Resolve(T fallback, bool privilegedObserver = false)
         => privilegedObserver || !_isHidden ? _value : fallback;
 
+    /// <inheritdoc/>
     public override string ToString()
         => _isHidden ? "[скрыто]" : (_value?.ToString() ?? string.Empty);
 }

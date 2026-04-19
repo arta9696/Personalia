@@ -14,11 +14,29 @@ namespace Personalia.Models.AppearanceSpace.BodyParts;
 /// </summary>
 public sealed class Physique : IBodyPart
 {
+    /// <summary>
+    /// TODO
+    /// </summary>
     public string DisplayName => "Телосложение";
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public IReadOnlyList<IBodyPart> SubParts => [Head, Torso, Limbs];
 
+    /// <summary>
+    /// TODO
+    /// </summary>
     public Head Head { get; } = new();
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public Torso Torso { get; } = new();
+
+    /// <summary>
+    /// TODO
+    /// </summary>
     public LimbSet Limbs { get; } = new();
 
     // ── Traversal helpers ─────────────────────────────────────────────────────
