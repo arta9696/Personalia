@@ -34,7 +34,10 @@ public static partial class TextFormatter
         => text.Replace("\"", "#quot;");
 
     /// <summary>
-    /// TODO
+    /// Compiled regex that matches the zero-width boundary between a lowercase
+    /// letter and an uppercase letter, used to split PascalCase identifiers into
+    /// space-separated words (e.g. <c>"DarkBrown"</c> → <c>"dark brown"</c>,
+    /// <c>"CloseCropped"</c> → <c>"close cropped"</c>).
     /// </summary>
     [GeneratedRegex(@"(?<=[a-z])(?=[A-Z])")]
     public static partial Regex CamelCaseSplitter();

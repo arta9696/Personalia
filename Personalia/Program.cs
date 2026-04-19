@@ -13,6 +13,5 @@ internal class Program
     }
 }
 
-// make localization context dependent on localization provider (in russian animals are masc/fem while in english they are neutral)
-// deprecate GetEnumValue(string typeName, string valueName in favor of GetEnumValue<T>(T value
 // Fill in all TODO summaries for doc generator
+// Replace all russian text not in localiztion portion to english for uniformity

@@ -6,14 +6,15 @@ namespace Personalia.Localization.Ru;
 /// RussianLocalizationProvider — Cyrillic locale for <c>CharacterDescriber</c> output.
 ///
 /// Grammatical context (<see cref="LocalizationContext"/>) is used to resolve
-/// gender-inflected variants of adjectives and nouns.  When a
-/// <see cref="LocalizationContext"/> is present, the provider first looks for
+/// gender-inflected variants of adjectives and nouns. When a
+/// <see cref="LocalizationContext"/> is received, the provider first looks for
 /// a context-specific dictionary entry using the key-suffix convention
 /// <c>"{TypeName}.{ValueName}.{Context}"</c>
 /// (e.g. <c>"AgeCategory.Adult.Female"</c>), then falls back to the base key.
 ///
-/// This allows Russian adjectives to agree with the subject's grammatical gender
-/// without changing the template structure or adding extra format parameters.
+/// Contexts are created exclusively through the provider's factory methods
+/// , keeping callers locale-agnostic. The age-number rules (singular / dual / plural) are
+/// encapsulated so they do not leak into presentation code.
 /// </summary>
 public sealed class RussianLocalizationProvider : ILocalizationProvider
 {
@@ -29,9 +30,9 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
                 = "Ваше имя {0} {1}. Вам {2} года. День рождения: {3} {4}.",
             ["Describer.SectionAppearance"] = "Внешность",
             ["Describer.AppearanceLine1"]
-                = "Вы {0} {1}. Вы {2}. У вас {3} рост, а телосложение лучше всего можно описать как {4}. ",
+                = "Вы {0} {1}. Вы {2}. У вас {3} рост и {4} телосложение. ",
             ["Describer.AppearanceLine2"]
-                = "У вас {0} кожа, {1} {2} глаза, а ваши {3} волосы {4}.",
+                = "У вас {0} кожа, {1} {2} глаза, а ваши {3} волосы имеют {4} цвет.",
             ["Describer.DistinctiveFeature"] = "Ваша наиболее выделяющаяся черта — {0}.",
             ["Describer.DistinctiveFeatures"] = "Ваши наиболее выделяющиеся черты — {0}.",
             ["Describer.SectionClothing"] = "Одежда",
@@ -71,7 +72,7 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["Build.Ripped"] = "рельефное",
             ["Build.Muscular"] = "мускулистое",
             ["Build.Brawny"] = "мощное",
-            ["Build.Average"] = "среднее телосложения",
+            ["Build.Average"] = "среднее",
         };
 
     private static readonly IReadOnlyDictionary<string, string> _enumValues =
@@ -79,15 +80,15 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
         {
             // ── Age categories — base (masculine/neutral) + feminine overrides ─────────
             // Used in "Вы {ageGroup} {gender}." so the adjective must agree with gender.
-            ["AgeCategory.Child"] = "ребёнок",       // gender-neutral noun
-            ["AgeCategory.Teen"] = "подросток",     // gender-neutral noun
-            ["AgeCategory.YoungAdult"] = "молодой",   // masculine
-            ["AgeCategory.YoungAdult.Female"] = "молодая",   // feminine override
-            ["AgeCategory.Adult"] = "взрослый",  // masculine
-            ["AgeCategory.Adult.Female"] = "взрослая", // feminine override
-            ["AgeCategory.MiddleAged"] = "среднего возраста", // invariant (genitive phrase)
-            ["AgeCategory.Senior"] = "пожилой",   // masculine
-            ["AgeCategory.Senior.Female"] = "пожилая",  // feminine override
+            ["AgeCategory.Child"] = "ребёнок",                  // gender-neutral noun
+            ["AgeCategory.Teen"] = "подросток",                 // gender-neutral noun
+            ["AgeCategory.YoungAdult"] = "молодой",             // masculine
+            ["AgeCategory.YoungAdult.Female"] = "молодая",      // feminine override
+            ["AgeCategory.Adult"] = "взрослый",                 // masculine
+            ["AgeCategory.Adult.Female"] = "взрослая",          // feminine override
+            ["AgeCategory.MiddleAged"] = "среднего возраста",   // invariant (genitive phrase)
+            ["AgeCategory.Senior"] = "пожилой",                 // masculine
+            ["AgeCategory.Senior.Female"] = "пожилая",          // feminine override
 
             // ── Sexual orientation (short-form predicate, gender-invariant) ───────────
             ["SexualOrientation.Heterosexual"] = "гетеросексуальны",
@@ -100,17 +101,17 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
             ["BiologicalGender.Female"] = "женщина",
 
             // ── HairColor ─────────────────────────────────────────────────────
-            ["HairColor.Black"] = "чёрного цвета",
-            ["HairColor.DarkBrown"] = "тёмно-каштанового цвета",
-            ["HairColor.Brown"] = "каштанового цвета",
-            ["HairColor.LightBrown"] = "светло-каштанового цвета",
-            ["HairColor.Blonde"] = "светлого цвета",
-            ["HairColor.Platinum"] = "платинового цвета",
-            ["HairColor.Red"] = "рыжего цвета",
-            ["HairColor.Auburn"] = "медно-рыжего цвета",
-            ["HairColor.Grey"] = "серого цвета",
-            ["HairColor.White"] = "белого цвета",
-            ["HairColor.Dyed"] = "крашеные",
+            ["HairColor.Black"] = "чёрный",
+            ["HairColor.DarkBrown"] = "тёмно-каштановый",
+            ["HairColor.Brown"] = "каштановый",
+            ["HairColor.LightBrown"] = "светло-каштановый",
+            ["HairColor.Blonde"] = "светлый",
+            ["HairColor.Platinum"] = "платиновый",
+            ["HairColor.Red"] = "рыжий",
+            ["HairColor.Auburn"] = "медно-рыжий",
+            ["HairColor.Grey"] = "серый",
+            ["HairColor.White"] = "белый",
+            ["HairColor.Dyed"] = "неестественный",
 
             // ── HairLength ────────────────────────────────────────────────────
             ["HairLength.Bald"] = "лысые",
@@ -201,10 +202,11 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Context is accepted but currently not used for plain string keys —
-    /// the keys in use agree with their fixed governing nouns
-    /// (height → "рост" masculine; build → "телосложение" neuter).
-    /// The parameter is reserved for future context-sensitive string variants.
+    /// When <paramref name="context"/> is a <see cref="LocalizationContext"/> with a
+    /// non-empty <see cref="LocalizationContext.Context"/> string, the provider first
+    /// tries the suffixed key <c>"{key}.{context}"</c> before falling back to
+    /// <paramref name="key"/>. Null <see cref="LocalizationContext"/> are ignored and 
+    /// the base key is used directly.
     /// </remarks>
     public string Get(string key, LocalizationContext? context = null)
     {
@@ -228,27 +230,49 @@ public sealed class RussianLocalizationProvider : ILocalizationProvider
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Lookup order when <paramref name="context"/> carries a gender value:
+    /// Lookup order when <paramref name="context"/> is a <see cref="LocalizationContext"/>:
     /// <list type="number">
-    ///   <item><c>"{typeName}.{valueName}.{context.Gender}"</c> — context-specific variant.</item>
-    ///   <item><c>"{typeName}.{valueName}"</c>                  — base (gender-neutral or masculine default).</item>
-    ///   <item><paramref name="valueName"/> verbatim             — ultimate fallback.</item>
+    ///   <item><c>"{typeName}.{valueName}.{context.Context}"</c> — context-specific variant.</item>
+    ///   <item><c>"{typeName}.{valueName}"</c> — base (gender-neutral or masculine default).</item>
+    ///   <item><paramref name="value"/>.Name verbatim — ultimate fallback.</item>
     /// </list>
+    /// Unknown <see cref="LocalizationContext"/> are ignored.
     /// </remarks>
-    public string GetEnumValue(string typeName, string valueName, LocalizationContext? context = null)
+    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T>
     {
         if (context?.Context is { Length: > 0 } contextString)
         {
-            var contextKey = $"{typeName}.{valueName}.{contextString}";
+            var contextKey = $"{value.GetType().Name}.{value.Name}.{contextString}";
             if (_enumValues.TryGetValue(contextKey, out var contextVal))
                 return contextVal;
         }
 
-        return _enumValues.TryGetValue($"{typeName}.{valueName}", out var val) ? val : valueName;
+        return _enumValues.TryGetValue($"{value.GetType().Name}.{value.Name}", out var val) ? val : value.Name;
     }
 
-    /// <summary>
-    /// TODO
-    /// </summary>
-    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T> => GetEnumValue(value.GetType().Name, value.Name, context);
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Returns a <see cref="LocalizationContext"/> wrapping the gender name so that
+    /// Russian adjectives (e.g. age-category words) agree with the subject's gender
+    /// or applies Russian number-agreement rules as follows:
+    /// <list type="bullet">
+    ///   <item>Units digit 1 (not teens) → <c>"Singular"</c> (год).</item>
+    ///   <item>Units digit 2–4 (not teens) → <c>"Dual"</c> (года).</item>
+    ///   <item>All other values → <c>null</c> (лет — uses the base template).</item>
+    /// </list>
+    /// </remarks>
+    public LocalizationContext? Context(string contextType, params object[] contextItems)
+    {
+        if (contextType == "BiologicalGender") return new LocalizationContext((string)contextItems[0]);
+        if (contextType == "Describer.Header.Age")
+        {
+            int age = (int)contextItems[0];
+            int units = age % 10;
+            int tens = age / 10 % 10;
+
+            if (units == 1 && tens != 1) return new LocalizationContext("Singular");
+            if (units is >= 2 and <= 4 && tens != 1) return new LocalizationContext("Dual");
+        }
+        return null;
+    }
 }

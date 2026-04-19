@@ -16,10 +16,11 @@ namespace Personalia.CharGen.Services;
 /// connection type names — are resolved through <see cref="ILocalizationProvider"/>
 /// so that no locale-specific text is embedded in the domain model.
 ///
-/// A <see cref="LocalizationContext"/> derived from the character's biological gender
-/// is passed to locale-sensitive lookups (e.g. age-group adjectives) so that
-/// providers such as <c>RussianLocalizationProvider</c> can apply correct
-/// grammatical agreement without altering templates or adding extra format parameters.
+/// Grammatical contexts are obtained exclusively through the provider's 
+/// <see cref="ILocalizationProvider.Context"/> method rather than being constructed
+/// directly. This keeps the describer locale-agnostic: English providers return
+/// <c>null</c> (no agreement needed), while Russian providers
+/// return a populated <see cref="LocalizationContext"/> encoding gender or number.
 ///
 /// String-formatting utilities are provided by <see cref="TextFormatter"/>.
 /// The default locale is English.
@@ -46,8 +47,8 @@ public sealed class CharacterDescriber
 
         // ── Derived context values ─────────────────────────────────────────────
         bool isMale = app.BiologicalGender.Value == BiologicalGender.Male;
-        var genderCtx = new LocalizationContext(app.BiologicalGender.Value.Name);
-        var ageCtx = ContextFromAge(app.Age.Value);
+        var genderCtx = _loc.Context("BiologicalGender", app.BiologicalGender.Value.Name);
+        var ageCtx = _loc.Context("Describer.Header.Age", app.Age.Value);
         var p = app.Physique;
 
         string skin = _loc.GetEnumValue(p.Torso.Organs.Skin.Color);
@@ -117,7 +118,10 @@ public sealed class CharacterDescriber
             {
                 var rel = c.ToCharacterNode.Character;
                 string role = LabelOrType(c);
-                string alive = _loc.Get(rel.IsAlive ? "Describer.Alive" : "Describer.Deceased", new LocalizationContext(rel.Appearance.BiologicalGender.Value.Name));
+                string relGender = rel.Appearance.BiologicalGender.Value.Name;
+                string alive = _loc.Get(
+                    rel.IsAlive ? "Describer.Alive" : "Describer.Deceased",
+                    _loc.Context("BiologicalGender", relGender));
                 return _loc.Format("Describer.FamilyEntry",
                     role, rel.GetDisplayName(privilegedObserver: true),
                     rel.Appearance.Age.Value.ToString(), alive);
@@ -161,37 +165,22 @@ public sealed class CharacterDescriber
         return sb.ToString().TrimEnd();
     }
 
-    /// <summary>
-    /// TODO
-    /// </summary>
-    /// <param name="value"></param>
-    private LocalizationContext? ContextFromAge(int value)
-    {
-        if (value % 10 == 1 && value / 10 % 10 != 1)
-        {
-            return new LocalizationContext("Singular");
-        }
-        else if (value % 10 < 5 && value / 10 % 10 != 1)
-        {
-            return new LocalizationContext("Dual");
-        }
-        else
-        {
-            return null;
-        }
-    }
-
     // ── Label helpers ─────────────────────────────────────────────────────────
 
     /// <summary>
     /// Returns the localised display string for a connection's role.
     /// Uses the typed <see cref="ConnectionLabel"/> when set;
     /// falls back to the localised <see cref="ConnectionType"/> name.
+    /// The context is derived from the destination character's biological gender
+    /// so that Russian role labels agree grammatically with the person they describe.
     /// </summary>
     private string LabelOrType(Connection c)
-        => c.Label is not null
-            ? _loc.GetEnumValue(c.Label, new LocalizationContext(c.ToCharacterNode.Character.Appearance.BiologicalGender.Value.Name))
-            : _loc.GetEnumValue(c.Type, new LocalizationContext(c.ToCharacterNode.Character.Appearance.BiologicalGender.Value.Name));
+    {
+        var genderCtx = _loc.Context("BiologicalGender", c.ToCharacterNode.Character.Appearance.BiologicalGender.Value.Name);
+        return c.Label is not null
+            ? _loc.GetEnumValue(c.Label, genderCtx)
+            : _loc.GetEnumValue(c.Type, genderCtx);
+    }
 
     private string HeightLabel(float cm) => cm switch
     {

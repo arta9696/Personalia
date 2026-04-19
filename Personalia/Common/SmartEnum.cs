@@ -40,8 +40,18 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// TODO
+    /// Initialises a new instance and registers it in the per-type lookup tables
+    /// by both numeric <paramref name="value"/> and <paramref name="name"/>.
+    ///
+    /// Called from derived-type static field initialisers, so the registry is
+    /// fully populated before any consumer can call <see cref="All"/>,
+    /// <see cref="FromValue"/>, or <see cref="FromName"/>.
     /// </summary>
+    /// <param name="value">Numeric discriminator, unique within the enum type.</param>
+    /// <param name="name">Code-friendly identifier matching the static field name.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="name"/> is null, empty, or whitespace.
+    /// </exception>
     protected SmartEnum(int value, string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -83,8 +93,14 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     }
 
     /// <summary>
-    /// TODO
+    /// Tries to find an instance by its numeric discriminator.
+    /// Returns <c>true</c> and sets <paramref name="result"/> when found;
+    /// returns <c>false</c> and sets <paramref name="result"/> to <c>null</c> otherwise.
     /// </summary>
+    /// <param name="value">The numeric discriminator to look up.</param>
+    /// <param name="result">
+    /// The matching instance when the method returns <c>true</c>; otherwise <c>null</c>.
+    /// </param>
     public static bool TryFromValue(int value, out TSelf? result)
     {
         Initialise();
@@ -92,8 +108,14 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     }
 
     /// <summary>
-    /// TODO
+    /// Tries to find an instance by its name (case-insensitive).
+    /// Returns <c>true</c> and sets <paramref name="result"/> when found;
+    /// returns <c>false</c> and sets <paramref name="result"/> to <c>null</c> otherwise.
     /// </summary>
+    /// <param name="name">The name to look up (matched case-insensitively).</param>
+    /// <param name="result">
+    /// The matching instance when the method returns <c>true</c>; otherwise <c>null</c>.
+    /// </param>
     public static bool TryFromName(string name, out TSelf? result)
     {
         Initialise();
@@ -103,34 +125,40 @@ public abstract class SmartEnum<TSelf> : IEquatable<SmartEnum<TSelf>>
     // ── Equality ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// TODO
+    /// Returns <c>true</c> when <paramref name="other"/> is not <c>null</c>
+    /// and shares this instance's numeric <see cref="Value"/>.
     /// </summary>
-    /// <param name="other"></param>
+    /// <param name="other">The instance to compare against.</param>
     public bool Equals(SmartEnum<TSelf>? other) => other is not null && Value == other.Value;
 
     /// <summary>
-    /// TODO
+    /// Returns <c>true</c> when <paramref name="obj"/> is a
+    /// <see cref="SmartEnum{TSelf}"/> whose <see cref="Value"/> equals this instance's.
     /// </summary>
+    /// <param name="obj">The object to compare against.</param>
     public override bool Equals(object? obj) => obj is SmartEnum<TSelf> other && Equals(other);
 
     /// <summary>
-    /// TODO
+    /// Returns the numeric <see cref="Value"/>, which is unique within the enum type,
+    /// making it a suitable hash code.
     /// </summary>
     public override int GetHashCode() => Value;
 
     /// <summary>
-    /// TODO
+    /// Returns the code-friendly <see cref="Name"/> of this instance
+    /// (e.g. <c>"Brown"</c>, <c>"YoungAdult"</c>).
     /// </summary>
     public override string ToString() => Name;
 
     /// <summary>
-    /// TODO
+    /// Returns <c>true</c> when both operands are <c>null</c>, or both reference
+    /// an instance with the same numeric <see cref="Value"/>.
     /// </summary>
     public static bool operator ==(SmartEnum<TSelf>? a, SmartEnum<TSelf>? b)
         => ReferenceEquals(a, b) || (a is not null && a.Equals(b));
 
     /// <summary>
-    /// TODO
+    /// Returns <c>true</c> when the operands do not compare equal under <c>==</c>.
     /// </summary>
     public static bool operator !=(SmartEnum<TSelf>? a, SmartEnum<TSelf>? b)
         => !(a == b);

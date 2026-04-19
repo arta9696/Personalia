@@ -20,8 +20,14 @@ public sealed class HiddenValue<T>
     // ── Construction ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// TODO
+    /// Initialises a new <see cref="HiddenValue{T}"/> with the given value and
+    /// visibility flag.
     /// </summary>
+    /// <param name="value">The underlying value to wrap.</param>
+    /// <param name="isHidden">
+    /// When <c>true</c> the value is concealed from observers by default.
+    /// Defaults to <c>false</c> (visible).
+    /// </param>
     public HiddenValue(T value, bool isHidden = false)
     {
         _value = value;

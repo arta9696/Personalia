@@ -4,7 +4,7 @@ using Personalia.Models.AppearanceSpace.BodyParts.Limbs;
 
 namespace Personalia.Models.AppearanceSpace.BodyParts;
 
-/// /// <summary>
+/// <summary>
 /// Physique — the complete physical build of a character.
 ///
 /// Implements the Composite pattern root: Head, Torso, and LimbSet; can be partially concealed by clothing.
@@ -14,28 +14,29 @@ namespace Personalia.Models.AppearanceSpace.BodyParts;
 /// </summary>
 public sealed class Physique : IBodyPart
 {
-    /// <summary>
-    /// TODO
-    /// </summary>
+    /// <summary>Human-readable display name for the physique composite root.</summary>
     public string DisplayName => "Телосложение";
 
     /// <summary>
-    /// TODO
+    /// Returns the three top-level body-part sections: <see cref="Head"/>,
+    /// <see cref="Torso"/>, and <see cref="Limbs"/>.
     /// </summary>
     public IReadOnlyList<IBodyPart> SubParts => [Head, Torso, Limbs];
 
     /// <summary>
-    /// TODO
+    /// The character's head, including hair, eyes, nose, ears, and mouth.
     /// </summary>
     public Head Head { get; } = new();
 
     /// <summary>
-    /// TODO
+    /// The character's torso, including internal organs (skin, skeleton, muscles,
+    /// fat tissue) and external sections such as chest, belly, waist, and hips.
     /// </summary>
     public Torso Torso { get; } = new();
 
     /// <summary>
-    /// TODO
+    /// The complete set of limbs — legs and arms, each subdivided
+    /// into their constituent segments.
     /// </summary>
     public LimbSet Limbs { get; } = new();
 

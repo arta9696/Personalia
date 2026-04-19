@@ -111,20 +111,24 @@ public sealed partial class EnglishLocalizationProvider : ILocalizationProvider
     public string Format(string key, params string[] args)
         => string.Format(Get(key), args);
 
-    /// <summary>
+    /// <inheritdoc/>
+    /// <remarks>
     /// Converts a PascalCase SmartEnum value name to a lowercase spaced phrase.
     /// Examples: "DarkBrown" → "dark brown", "CloseCropped" → "close cropped".
     /// Some names are returned with proper capitalisation or punctuation from the override table.
-    /// No explicit mapping is needed when new enum values are added.
     /// Context is accepted for interface compliance but not used in English.
-    /// </summary>
-    public string GetEnumValue(string typeName, string valueName, LocalizationContext? context = null)
-        => _enumOverrides.TryGetValue($"{typeName}.{valueName}", out var overrideVal)
+    /// </remarks>
+    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T>
+        => _enumOverrides.TryGetValue($"{value.GetType().Name}.{value.Name}", out var overrideVal)
             ? overrideVal
-            : TextFormatter.CamelCaseSplitter().Replace(valueName, " ").ToLower();
+            : TextFormatter.CamelCaseSplitter().Replace(value.Name, " ").ToLower();
 
-    /// <summary>
+    /// <inheritdoc/>
+    /// <remarks>
     /// TODO
-    /// </summary>
-    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T> => GetEnumValue(value.GetType().Name, value.Name, context);
+    /// </remarks>
+    public LocalizationContext? Context(string contextType, params object[] contextItems)
+    {
+        return null;
+    }
 }

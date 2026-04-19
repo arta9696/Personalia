@@ -10,19 +10,21 @@ namespace Personalia.Localization;
 /// <see cref="En.EnglishLocalizationProvider"/>; a Russian alternative is
 /// <see cref="Ru.RussianLocalizationProvider"/>.
 ///
-/// Where grammatical agreement is required,
-/// pass a <see cref="LocalizationContext"/> to <see cref="Get"/> or
-/// <see cref="GetEnumValue"/>. English implementations may safely ignore the context.
+/// Grammatical agreement is handled through <see cref="LocalizationContext"/>
+/// instances created by the provider's own methods.  Callers obtain
+/// contexts, keeping them locale-agnostic: English return <c>null</c> because English
+/// adjectives do not inflect, while Russian return a populated
+/// <see cref="LocalizationContext"/> carrying the relevant grammatical tags.
 /// </summary>
 public interface ILocalizationProvider
 {
     /// <summary>
     /// Returns the localised string for the given key.
     /// </summary>
-    /// <param name="key">Localisation key (e.g. <c>Lk.Height.Tall</c>).</param>
+    /// <param name="key">Localisation key (e.g. <c>Height.Tall</c>).</param>
     /// <param name="context">
-    /// Optional grammatical context. Implementations use this to select
-    /// correctly inflected variants.
+    /// Optional grammatical context. Implementations use this to select correctly
+    /// inflected variants; English implementations ignore it.
     /// </param>
     string Get(string key, LocalizationContext? context = null);
 
@@ -30,28 +32,35 @@ public interface ILocalizationProvider
     /// Formats the localised template stored under <paramref name="key"/>
     /// with the supplied <paramref name="args"/> using <see cref="string.Format"/>.
     /// </summary>
+    /// <param name="key">Localisation key of the format template.</param>
+    /// <param name="context">
+    /// Optional grammatical context used to resolve the inflected template before
+    /// formatting. English implementations ignore it.
+    /// </param>
+    /// <param name="args">Arguments interpolated into the resolved template.</param>
     string Format(string key, LocalizationContext? context, params string[] args);
 
     /// <summary>
-    /// TODO
+    /// Formats the localised template stored under <paramref name="key"/>
+    /// with the supplied <paramref name="args"/> without a grammatical context.
     /// </summary>
+    /// <param name="key">Localisation key of the format template.</param>
+    /// <param name="args">Arguments interpolated into the template.</param>
     string Format(string key, params string[] args);
 
     /// <summary>
     /// Returns the localised display name for a SmartEnum value.
-    /// Key convention: <c>"{TypeSimpleName}.{ValueName}"</c>
-    /// (e.g. <c>"HairColor.DarkBrown"</c>, <c>"Month.January"</c>).
     /// </summary>
-    /// <param name="typeName">Simple name of the SmartEnum type (e.g. <c>"HairColor"</c>).</param>
-    /// <param name="valueName">Name of the enum value (e.g. <c>"DarkBrown"</c>).</param>
+    /// <typeparam name="T">The SmartEnum type.</typeparam>
+    /// <param name="value">The SmartEnum instance to localise.</param>
     /// <param name="context">
     /// Optional grammatical context. When provided, implementations may look up a
     /// context-specific variant before falling back to the base key.
     /// </param>
-    string GetEnumValue(string typeName, string valueName, LocalizationContext? context = null);
+    string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T>;
 
     /// <summary>
     /// TODO
     /// </summary>
-    public string GetEnumValue<T>(T value, LocalizationContext? context = null) where T : SmartEnum<T>;
+    LocalizationContext? Context(string contextType, params object[] contextItems);
 }
